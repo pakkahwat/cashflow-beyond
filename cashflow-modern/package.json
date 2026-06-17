@@ -1,0 +1,19 @@
+{
+  "name": "cashflow-modern",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Cashflow board game (Rat Race + Fast Track) — React + TypeScript, realtime on Cloudflare Workers + Durable Objects, bilingual TH/EN",
+  "scripts": {
+    "install:all": "npm --prefix client install && npm --prefix worker install",
+    "dev": "concurrently -n worker,client -c blue,green \"npm --prefix worker run dev\" \"npm --prefix client run dev\"",
+    "dev:worker": "npm --prefix worker run dev",
+    "dev:client": "npm --prefix client run dev",
+    "build": "npm --prefix client run build",
+    "preview": "npm run build && npm --prefix worker run dev",
+    "deploy": "npm run build && npm --prefix worker run deploy",
+    "typecheck": "npm --prefix client run typecheck && npm --prefix worker run typecheck"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

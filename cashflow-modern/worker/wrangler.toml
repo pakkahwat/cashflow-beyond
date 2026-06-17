@@ -1,0 +1,19 @@
+name = "cashflow-modern"
+main = "src/index.ts"
+compatibility_date = "2024-11-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Serve the built React client as static assets; the Worker handles /api and /ws.
+[assets]
+directory = "../client/dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+
+[[durable_objects.bindings]]
+name = "GAME_ROOM"
+class_name = "GameRoom"
+
+# Durable Objects on the Workers free plan are SQLite-backed.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["GameRoom"]
