@@ -61,7 +61,7 @@ export default function RatRaceBoard({ players, currentId, center }: Props) {
         })}
         <div className="ring-center">
           <div className="ring-logo">
-            CA$HFLOW
+            CA$HRICH
             <span className="ring-sub">หนีออกจากวงจรหนูถีบจักร</span>
           </div>
           {center}

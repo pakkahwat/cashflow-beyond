@@ -406,8 +406,6 @@ input[type='number'] { width: 110px; }
   background: radial-gradient(circle at 50% 38%, #243463 0%, #15203c 58%, #0d1630 100%);
   border: 3px solid #2e3a63;
   box-shadow: 0 36px 70px rgba(0, 0, 0, 0.6), inset 0 0 70px rgba(0, 0, 0, 0.55);
-  transform: rotateX(16deg);
-  transform-style: preserve-3d;
 }
 .ring-tile {
   position: absolute;
@@ -444,7 +442,7 @@ input[type='number'] { width: 110px; }
   top: 50%;
   width: 54%;
   height: 54%;
-  transform: translate(-50%, -50%) rotateX(-16deg);
+  transform: translate(-50%, -50%);
   border-radius: 50%;
   background: radial-gradient(circle at 50% 35%, #1d2a4e, #111a31 70%);
   border: 2px solid #34406e;
@@ -540,3 +538,49 @@ input[type='number'] { width: 110px; }
   .prof-grid { grid-template-columns: 1fr; gap: 6px; }
   .play-panel .status-mini { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* ============ polish: visible dice + vivid tiles ============ */
+.dice3d { width: 72px; height: 72px; }
+.cube { width: 72px; height: 72px; }
+.d-face { width: 72px; height: 72px; padding: 9px; }
+.pip { width: 13px; height: 13px; }
+.f-front { transform: translateZ(36px); }
+.f-back { transform: rotateY(180deg) translateZ(36px); }
+.f-right { transform: rotateY(90deg) translateZ(36px); }
+.f-left { transform: rotateY(-90deg) translateZ(36px); }
+.f-top { transform: rotateX(90deg) translateZ(36px); }
+.f-bottom { transform: rotateX(-90deg) translateZ(36px); }
+
+.ring-center { width: 60%; height: 60%; gap: 5px; overflow: visible; }
+.ring-logo { font-size: clamp(14px, 2.4vw, 24px); }
+.ring-sub { font-size: 8.5px; }
+.ring-center .center-stack { gap: 6px; }
+.ring-center .turn-banner { padding: 5px 12px; font-size: 13px; }
+.ring-center .dice-area { min-height: 80px; position: relative; z-index: 2; }
+.dice-total {
+  font-size: 14px;
+  color: var(--muted);
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.dice-total b {
+  font-size: 26px;
+  color: var(--gold);
+  min-width: 32px;
+  text-shadow: 0 2px 8px rgba(241, 196, 15, 0.4);
+}
+
+/* vivid, readable ring tiles by category */
+.ring-tile { border-width: 1.5px; }
+.ring-tile .tile-name { color: rgba(255, 255, 255, 0.92); font-weight: 600; }
+.ring-tile .tile-icon { font-size: 19px; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5)); }
+.ring-tile.tile-deal { background: linear-gradient(160deg, #1f8a52, #0e4129); border-color: #34d97b; }
+.ring-tile.tile-payday { background: linear-gradient(160deg, #d99a1c, #7a560d); border-color: #ffd24a; }
+.ring-tile.tile-market { background: linear-gradient(160deg, #2f6fd0, #163a73); border-color: #5fa8ff; }
+.ring-tile.tile-doodad { background: linear-gradient(160deg, #c5642f, #6e3416); border-color: #ff9b5a; }
+.ring-tile.tile-charity { background: linear-gradient(160deg, #c0398a, #5e1a44); border-color: #ff7ac6; }
+.ring-tile.tile-downsized { background: linear-gradient(160deg, #c0392b, #5e1a15); border-color: #ff7a6a; }
+.ring-tile.tile-baby { background: linear-gradient(160deg, #138a9a, #0c4650); border-color: #4fd6e6; }

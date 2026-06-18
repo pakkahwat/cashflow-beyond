@@ -67,6 +67,11 @@ export default function Game() {
           />
         ))}
       </div>
+      {state.hasRolled && state.diceValues.length > 0 && (
+        <div className="dice-total">
+          {t('game.youRolled')} <b>{state.diceValues.reduce((a, b) => a + b, 0)}</b>
+        </div>
+      )}
     </div>
   );
 

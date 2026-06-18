@@ -1,6 +1,6 @@
 {
   "app": {
-    "title": "CASHFLOW",
+    "title": "CA$HRICH",
     "subtitle": "The board game of financial freedom",
     "tagline": "Escape the Rat Race, then conquer the Fast Track"
   },
@@ -33,6 +33,7 @@
     "ratRace": "Rat Race",
     "fastTrack": "Fast Track",
     "roll": "Roll dice",
+    "youRolled": "You rolled",
     "roll1": "Roll 1 die",
     "roll2": "Roll 2 dice",
     "endTurn": "End turn",
