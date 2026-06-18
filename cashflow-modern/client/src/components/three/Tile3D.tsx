@@ -1,5 +1,5 @@
-import { RoundedBox, Html, Outlines } from '@react-three/drei';
-import TileIcon from './TileIcon';
+import { RoundedBox, Html, Outlines, Billboard } from '@react-three/drei';
+import Icon3D from './Icon3D';
 
 export interface Tile3DProps {
   position: [number, number, number];
@@ -50,16 +50,30 @@ export default function Tile3D({
         )}
         {active && <Outlines thickness={4} color="#ffd766" transparent opacity={0.9} />}
       </RoundedBox>
+      {/* Real 3D icon, billboarded so it always faces the camera (upright on every tile). */}
+      <Billboard position={[0, TILE_H / 2 + 0.34, 0]}>
+        <group scale={0.7}>
+          <Icon3D name={icon} />
+        </group>
+      </Billboard>
+      {/* text label hugging the tile surface */}
       <Html
-        position={[0, TILE_H / 2 + 0.01, 0]}
-        rotation={[-Math.PI / 2, 0, 0]}
-        transform
-        occlude
-        distanceFactor={6}
-        style={{ pointerEvents: 'none', textAlign: 'center', userSelect: 'none' }}
+        position={[0, TILE_H / 2 + 0.02, 0]}
+        center
+        zIndexRange={[10, 0]}
+        style={{ pointerEvents: 'none', textAlign: 'center', userSelect: 'none', width: 80 }}
       >
-        <TileIcon name={icon} />
-        <div style={{ fontSize: 9, color: '#e8ecf8', fontWeight: 600, marginTop: 3 }}>{label}</div>
+        <div
+          style={{
+            fontSize: 10,
+            color: '#eef2ff',
+            fontWeight: 600,
+            whiteSpace: 'nowrap',
+            textShadow: '0 1px 3px rgba(0,0,0,0.85)'
+          }}
+        >
+          {label}
+        </div>
       </Html>
     </group>
   );

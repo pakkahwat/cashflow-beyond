@@ -71,3 +71,139 @@
     max-width: 96vw;
   }
 }
+
+/* ---- action bar: overlaid on the 3D board (normal flow in the 2D fallback) ---- */
+.board3d-actions {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  z-index: 5;
+  width: min(94%, 480px);
+}
+.action-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.board3d-actions .action-bar {
+  background: rgba(13, 18, 38, 0.82);
+  backdrop-filter: blur(6px);
+  border: 1px solid var(--line, #2a3556);
+  border-radius: 14px;
+  padding: 10px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5);
+}
+
+/* ---- centre-screen roll-result flourish ---- */
+.roll-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 120;
+  pointer-events: none;
+}
+.roll-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 24px 36px;
+  border-radius: 20px;
+  background: rgba(13, 18, 38, 0.88);
+  border: 1px solid var(--gold, #f1c40f);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6), 0 0 50px rgba(241, 196, 15, 0.3);
+  animation: rollPop 1.5s ease forwards;
+}
+.roll-dice {
+  display: flex;
+  gap: 12px;
+}
+.roll-die {
+  width: 50px;
+  height: 50px;
+  border-radius: 12px;
+  background: #f4f6ff;
+  color: #1b1b24;
+  font-weight: 800;
+  font-size: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 5px 12px rgba(0, 0, 0, 0.4);
+}
+.roll-total {
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--gold, #f1c40f);
+}
+@keyframes rollPop {
+  0% { transform: scale(0.4); opacity: 0; }
+  14% { transform: scale(1.12); opacity: 1; }
+  80% { transform: scale(1); opacity: 1; }
+  100% { transform: scale(0.96); opacity: 0; }
+}
+
+/* ---- fullscreen, no-scroll mode (when the game-screen is fullscreened) ---- */
+.game-screen:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--bg, #0b0f1d);
+}
+.game-screen:fullscreen .board-area {
+  min-height: 0;
+  overflow: hidden;
+}
+.game-screen:fullscreen .side-panel {
+  max-height: 100vh;
+  overflow-y: auto;
+}
+.game-screen:fullscreen .play-panel {
+  display: none;
+}
+.game-screen:fullscreen .board3d-wrap,
+.game-screen:fullscreen .board {
+  max-width: min(86vh, 96%);
+  max-height: calc(100vh - 96px);
+}
+
+/* player name floating above a 3D token */
+.token-name {
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  background: rgba(13, 18, 38, 0.85);
+  border: 1px solid var(--line, #2a3556);
+  border-radius: 999px;
+  padding: 2px 9px;
+  white-space: nowrap;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+/* landing-feedback toast (what happened when you land on a tile) */
+.event-toast {
+  position: fixed;
+  top: 74px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 115;
+  pointer-events: none;
+  background: rgba(13, 18, 38, 0.92);
+  border: 1px solid var(--line, #2a3556);
+  border-radius: 12px;
+  padding: 10px 18px;
+  color: #eef2ff;
+  font-weight: 600;
+  font-size: 14px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  max-width: min(90vw, 460px);
+  text-align: center;
+  animation: toastIn 0.25s ease;
+}
+@keyframes toastIn {
+  from { opacity: 0; transform: translate(-50%, -8px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}

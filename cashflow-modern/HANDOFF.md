@@ -69,7 +69,8 @@ worker/src/
 client/src/
   components/Game.tsx        ประกอบจอเกม (3D board + HUD overlay)
   components/three/          3D (R3F): Board3D, RatRaceRing3D, FastTrackRing3D, Tile3D, Token3D,
-                             Dice3DGL, Lighting, Effects, TileIcon (lucide)
+                             Dice3DGL, Lighting, Effects, BoardBase (แท่น+วงเรืองแสง), Icon3D (3D icon ต่อช่อง)
+                             (TileIcon = lucide SVG เดิม — เลิกใช้แล้ว แทนด้วย Icon3D billboard)
   components/                CardModal, FastTrackModal, DreamPicker, ProfessionCard, Lobby, Home, ...
   lib/socket.ts              WebSocket transport (+ reconnect)
   lib/sfx.ts                 Web Audio sound effects (สังเคราะห์เอง, ไม่มีไฟล์เสียง)
@@ -88,9 +89,15 @@ docs/superpowers/
 
 ## 4. ฟีเจอร์ที่ทำแล้ว
 
-- **กระดาน 3D** (React Three Fiber): วงแหวน Rat Race 24 ช่อง / Fast Track 32 ช่อง, หมาก 3D เดินตามราง, ลูกเต๋า 3D 6 หน้า, Lightformer studio env, **N8AO** ambient occlusion, **AgX** tone mapping, **SMAA**, clearcoat (ลูกเต๋า/ช่อง active), **Outlines** ทอง (ช่อง+หมากปัจจุบัน), disc สะท้อนแสง, OrbitControls + damping
-  - มี **quality toggle (High/Low)** + **WebGL fallback** เป็นกระดาน CSS เดิม (เก็บไว้ไม่ลบ) + เคารพ `prefers-reduced-motion`
+- **กระดาน 3D** (React Three Fiber): วงแหวน Rat Race 24 / Fast Track 32 ช่อง บน **BoardBase** (แท่นยกขอบมน + วงแหวนเรืองแสง 3 ชั้น + แท่นกลางวางลูกเต๋า), ลูกเต๋า 3D 6 หน้า, Lightformer studio env, **AgX** tone mapping + **Bloom** + Vignette (MSAA), clearcoat (ลูกเต๋า/ช่อง active), **Outlines** ทอง, **ContactShadows** (เงานุ่ม), OrbitControls + damping
+  - **บอร์ดขยายตามจอ** (breakpoint 1400/1800/2300px) + **โหมดเต็มจอไม่ต้องเลื่อน** (ปุ่ม ⛶ → Fullscreen API + กฎ `:fullscreen` ซ่อน statusPanel/บอร์ดพอดีจอ)
+  - **หมากเดิน animation จริง** — Token3D เดินไล่ทีละช่องตามราง + กระโดด (`useFrame`); **สำคัญ:** render token เป็น **flat list keyed by `id`** (ไม่ซ้อนใน group ของ tile) ไม่งั้นย้าย tile = remount = เด้ง ไม่เดิน
+  - **หมาก 6 รูปทรง** (กลม/กรวย/เพชร/คริสตัล/โดเดคา/แคปซูล — เลือกตาม index ผู้เล่น `variant`) + **ชื่อผู้เล่นลอยเหนือหัว** (Html billboard)
+  - **icon ช่องเป็น 3D** (`Icon3D`): extruded หัวใจ/ดาว (THREE.Shape) + primitive เหรียญ/กระเป๋า/ตึก/กราฟแท่ง; ครอบ `<Billboard>` หันเข้ากล้อง; โทนสีนุ่ม **ไม่ใส่ emissive** (กัน bloom ทำสีเกิน)
+  - **quality toggle (High/Low)** + **WebGL fallback** กระดาน CSS เดิม (เก็บไว้ไม่ลบ) + เคารพ `prefers-reduced-motion`
+  - **⚠️ flicker fix (สำคัญ):** เอา **N8AO + SMAA** ออก (เคยกระพิบใน High), **ปิด cast-shadow ของ directional light** (shadow acne) → ใช้ ContactShadows แทน, ถ่างระยะ y ใน BoardBase กัน z-fighting, วงเรืองแสงหนาขึ้น+หรี่ emissive + จูน Bloom — ถ้าจะใส่ AO/เงา directional กลับ ให้ระวังกระพิบ
 - **เสียง (SFX)** สังเคราะห์ด้วย Web Audio ต่อ event (ทอย/จั่ว/payday/deal/market/doodad/downsized/baby/charity/fasttrack/win/buy) + ปุ่ม mute (เก็บ localStorage) — trigger จาก activity log ใน `gameStore.onState`
+- **UX เทิร์น:** ปุ่ม **ทอย/จบเทิร์น เป็น overlay ลอยล่างกระดาน** (`.board3d-actions`/`actionBar` — เห็นตลอด ไม่ต้องเลื่อน) + **animation ผลทอยกลางจอ** (`rollFx` → `.roll-overlay`) + **ลำดับ: ทอย → เดินจบ → ค่อยเปิด dialog การ์ด** (gate ด้วย state `walking`, หน่วงตามจำนวนตาที่เดิน) + **toast บอกผลตอนตกช่อง** (`eventToast` อ่านบรรทัดล่าสุดของ activity log — บอกผล payday/รายจ่าย/ฯลฯ ที่ไม่เปิดการ์ด) + ปุ่ม **เริ่มเกมใหม่** (`newGame` = leaveRoom→reset→หน้าแรก)
 - **i18n ไทย/อังกฤษ**: UI strings + **เนื้อการ์ดทั้ง 147 ใบ** + ชื่ออาชีพ (สลับด้วยปุ่มภาษา; ไทยเป็น default)
 - **Responsive** (breakpoints 960/600/400) + **TailwindCSS v4** integrate แล้ว (ใช้ utility `bg-panel`/`text-gold`/`border-line` ได้)
 - **กติกา** ตรวจเทียบ rulebook Cashflow 101 จริง (ดูหัวข้อ 5)
@@ -126,6 +133,8 @@ docs/superpowers/
 ## 7. ข้อควรรู้ / Caveats
 
 - **Tone mapping:** โหมด High ให้ composer ทำ (AgX); canvas ตั้ง `NoToneMapping` ตอน highFx, ACES ตอน low (กัน double tone-map) — ดู `Board3D.tsx`
+- **Post-FX ตอนนี้เหลือ Bloom + Vignette + AgX (MSAA)** — N8AO/SMAA ถูกถอดออกเพราะกระพิบ (ดู `Effects.tsx`); เงาใช้ `ContactShadows` ตัวเดียว (directional light ไม่ cast)
+- **`walking` gate:** ถ้าจะเพิ่ม dialog ที่ต้องโผล่หลังเดินจบ ให้เช็ค `!walking` ด้วย (ดู Game.tsx); ระยะเดินคำนวณจากผลรวมลูกเต๋า ÷ 6 tiles/วิ (ตรงกับ `SPEED` ใน Token3D)
 - **Tailwind:** ถ้า dev server รันอยู่ก่อนเพิ่ม `postcss.config.js` ต้อง **restart** ให้ Vite อ่าน postcss (Tailwind ถึงทำงาน)
 - **Bundle ~1.2MB** (three.js) — เป็น warning เฉยๆ; อยากลดค่อย code-split
 - **Dead code:** Node Socket.IO server (`server/src/index.ts`,`rooms.ts`) + legacy root app — ไม่ได้ใช้

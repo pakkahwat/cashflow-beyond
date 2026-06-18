@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { Canvas } from '@react-three/fiber';
-import { OrbitControls, ContactShadows, Sparkles } from '@react-three/drei';
+import { OrbitControls, ContactShadows } from '@react-three/drei';
 import * as THREE from 'three';
 import Lighting from './Lighting';
 import Effects from './Effects';
@@ -76,16 +76,6 @@ export default function Board3D({ state, myId, dreams, fastTrack, quality }: Boa
           />
         )}
 
-        <Sparkles
-          count={quality === 'high' ? 80 : 28}
-          scale={[26, 9, 26]}
-          size={4}
-          speed={0.22}
-          color="#ffd98a"
-          opacity={0.5}
-          position={[0, 3, 0]}
-        />
-
         {Array.from({ length: diceCount }).map((_, i) => (
           <Dice3DGL
             key={i}
@@ -98,11 +88,11 @@ export default function Board3D({ state, myId, dreams, fastTrack, quality }: Boa
 
         {quality === 'high' && (
           <ContactShadows
-            position={[0, 0, 0]}
-            opacity={0.55}
+            position={[0, -0.1, 0]}
+            opacity={0.5}
             scale={22}
-            blur={2.2}
-            far={6}
+            blur={2.4}
+            far={1.6}
             resolution={512}
             color="#000000"
           />
@@ -119,7 +109,7 @@ export default function Board3D({ state, myId, dreams, fastTrack, quality }: Boa
           maxDistance={20}
           target={[0, 0, 0]}
         />
-        <Effects enabled={highFx} quality={quality} />
+        <Effects enabled={highFx} />
       </Canvas>
     </div>
   );

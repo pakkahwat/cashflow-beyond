@@ -48,7 +48,10 @@
     "spectating": "You are spectating (out of the game)",
     "reconnecting": "Reconnecting to your game...",
     "soundOn": "Sound on",
-    "soundOff": "Mute"
+    "soundOff": "Mute",
+    "newGame": "New game",
+    "rolled": "Rolled {{total}}!",
+    "fullscreen": "Fullscreen"
   },
   "profession": {
     "your": "Your profession is",

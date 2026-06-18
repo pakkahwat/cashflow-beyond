@@ -48,7 +48,10 @@
     "spectating": "คุณกำลังชม (ออกจากเกมแล้ว)",
     "reconnecting": "กำลังกลับเข้าเกม...",
     "soundOn": "เปิดเสียง",
-    "soundOff": "ปิดเสียง"
+    "soundOff": "ปิดเสียง",
+    "newGame": "เริ่มใหม่",
+    "rolled": "ทอยได้ {{total}}!",
+    "fullscreen": "เต็มจอ"
   },
   "profession": {
     "your": "อาชีพของคุณคือ",

@@ -11,19 +11,9 @@ export default function Lighting({ quality }: LightingProps) {
     <>
       <ambientLight intensity={0.55} />
       <hemisphereLight args={['#8aa0ff', '#0b0f1d', 0.5]} />
-      <directionalLight
-        position={[6, 12, 6]}
-        intensity={high ? 1.4 : 1.1}
-        castShadow={high}
-        shadow-mapSize-width={1024}
-        shadow-mapSize-height={1024}
-        shadow-camera-left={-16}
-        shadow-camera-right={16}
-        shadow-camera-top={16}
-        shadow-camera-bottom={-16}
-        shadow-camera-near={0.5}
-        shadow-camera-far={40}
-      />
+      {/* No cast-shadow here: the directional shadow map caused flicker (shadow acne)
+          on the large platform. Grounding comes from drei <ContactShadows> instead. */}
+      <directionalLight position={[6, 12, 6]} intensity={high ? 1.4 : 1.1} />
       <directionalLight position={[-8, 5, -6]} intensity={0.45} color="#5b6bff" />
       {/* dramatic key spot over the board + subtle glow rising from the center */}
       <spotLight position={[0, 16, 2]} angle={0.55} penumbra={0.9} intensity={high ? 1.4 : 1} color="#dce6ff" />

@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { emit } from '../lib/socket';
+import { emit, leaveRoom } from '../lib/socket';
 import { useGame, myPlayer } from '../store/gameStore';
 import RatRaceBoard from './RatRaceBoard';
 import FastTrackBoard from './FastTrackBoard';
@@ -32,12 +32,65 @@ export default function Game() {
   const setQuality = useGame((s) => s.setQuality);
   const webglOk = useMemo(() => hasWebGL(), []);
   const use3d = render3d && webglOk;
+  const reset = useGame((s) => s.reset);
   const [muted, setMutedState] = useState(getMuted());
 
   const [showProfession, setShowProfession] = useState(false);
   useEffect(() => {
     if (state?.status === 'started') setShowProfession(true);
   }, [state?.status]);
+
+  // Centre-screen dice flourish + walk gating + landing-feedback toast.
+  const [rollFx, setRollFx] = useState<{ values: number[]; total: number } | null>(null);
+  const [walking, setWalking] = useState(false);
+  const [eventToast, setEventToast] = useState<string | null>(null);
+  const lastRollKey = useRef('');
+  const lastLogTs = useRef(0);
+  const walkTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const screenRef = useRef<HTMLDivElement>(null);
+
+  // a new roll -> show the dice flourish and gate dialogs until the token finishes
+  // walking. The walk timer lives in a ref (NOT the effect cleanup) so unrelated
+  // re-renders/state pushes can't cancel it and leave `walking` stuck on.
+  useEffect(() => {
+    if (!state?.hasRolled || !state.diceValues.length) return;
+    const key = `${state.currentPlayerId}|${state.diceValues.join(',')}`;
+    if (key === lastRollKey.current) return;
+    lastRollKey.current = key;
+    const total = state.diceValues.reduce((a, b) => a + b, 0);
+    const walkMs = Math.min(2600, Math.max(1100, (total / 6) * 1000 + 500));
+    setRollFx({ values: state.diceValues.slice(), total });
+    setWalking(true);
+    if (walkTimer.current) clearTimeout(walkTimer.current);
+    walkTimer.current = setTimeout(() => setWalking(false), walkMs);
+  }, [state?.hasRolled, state?.diceValues, state?.currentPlayerId]);
+
+  // auto-dismiss the dice flourish (depends only on rollFx, so state pushes don't disturb it)
+  useEffect(() => {
+    if (!rollFx) return;
+    const id = setTimeout(() => setRollFx(null), 1300);
+    return () => clearTimeout(id);
+  }, [rollFx]);
+
+  // surface the newest activity-log line as a toast so landing on any tile gives
+  // feedback. Logs are stored newest-first (server unshift) -> newest entry is logs[0].
+  useEffect(() => {
+    const logs = state?.logs;
+    if (!logs || !logs.length) return;
+    if (lastLogTs.current === 0) {
+      lastLogTs.current = logs[0].ts; // seed watermark; skip the backlog on first load
+      return;
+    }
+    if (logs[0].ts <= lastLogTs.current) return;
+    lastLogTs.current = logs[0].ts;
+    setEventToast(`${logs[0].player} ${logs[0].message}`);
+  }, [state?.logs]);
+  useEffect(() => {
+    if (!eventToast) return;
+    const id = setTimeout(() => setEventToast(null), 2800);
+    return () => clearTimeout(id);
+  }, [eventToast]);
+  useEffect(() => () => { if (walkTimer.current) clearTimeout(walkTimer.current); }, []);
 
   if (!state) return null;
 
@@ -49,6 +102,19 @@ export default function Game() {
   const send = async (event: string, payload?: any) => {
     const res = await emit(event, payload);
     if (!res.ok) setError(res.error || 'generic');
+  };
+
+  // Leave the room and return Home to start a brand-new game.
+  const newGame = async () => {
+    await leaveRoom();
+    reset();
+  };
+
+  const toggleFullscreen = () => {
+    const el = screenRef.current;
+    if (!el) return;
+    if (document.fullscreenElement) document.exitFullscreen();
+    else el.requestFullscreen?.();
   };
 
   const canRoll = isMyTurn && !state.hasRolled && state.status === 'started' && !me?.isBankrupt;
@@ -86,8 +152,8 @@ export default function Game() {
     </div>
   );
 
-  // --- controls + status shown below the board ---
-  const controls = (
+  // --- status info (shown below the board) ---
+  const statusPanel = (
     <div className="play-panel">
       {me && (
         <div className="status-mini">
@@ -142,7 +208,13 @@ export default function Game() {
           </small>
         </div>
       )}
+    </div>
+  );
 
+  // --- action buttons (overlaid on the board in 3D, below it in 2D) so Roll/End
+  //     Turn are always reachable without scrolling. ---
+  const actionBar = (
+    <div className="action-bar">
       {state.awaitingFastTrackChoice === myId && (
         <button className="btn win big" onClick={() => send('enterFastTrack')}>
           🎉 {t('fastTrack.escape')}
@@ -198,7 +270,7 @@ export default function Game() {
   );
 
   return (
-    <div className="game-screen">
+    <div className="game-screen" ref={screenRef}>
       <div className="board-area">
         <div className="board-topbar">
           <span className="phase-pill">
@@ -207,6 +279,9 @@ export default function Game() {
           {me && <span className="prof-pill">{me.professionName}</span>}
           <span className="room-pill">{state.roomId}</span>
           <div className="view-toggles">
+            <button className="view-btn newgame" onClick={newGame} title={t('game.newGame')}>
+              🔄 {t('game.newGame')}
+            </button>
             <button
               className={`view-btn ${use3d ? 'active' : ''}`}
               disabled={!webglOk}
@@ -234,6 +309,9 @@ export default function Game() {
             >
               {muted ? '🔇' : '🔊'}
             </button>
+            <button className="view-btn" onClick={toggleFullscreen} title={t('game.fullscreen')}>
+              ⛶
+            </button>
           </div>
         </div>
         {use3d ? (
@@ -246,6 +324,7 @@ export default function Game() {
               quality={quality}
             />
             <div className="board3d-banner">{turnBanner}</div>
+            <div className="board3d-actions">{actionBar}</div>
           </div>
         ) : me?.phase === 'fastTrack' ? (
           <FastTrackBoard
@@ -258,7 +337,8 @@ export default function Game() {
         ) : (
           <RatRaceBoard players={state.players} currentId={state.currentPlayerId} center={boardCenter} />
         )}
-        {controls}
+        {!use3d && actionBar}
+        {statusPanel}
       </div>
 
       <aside className="side-panel">
@@ -280,13 +360,14 @@ export default function Game() {
         <ProfessionCard me={me} onClose={() => setShowProfession(false)} />
       )}
       {!showProfession && needDream && <DreamPicker dreams={dreams} />}
-      {!needDream && state.pendingCard && (
+      {eventToast && <div className="event-toast">{eventToast}</div>}
+      {!needDream && !walking && state.pendingCard && (
         <CardModal card={state.pendingCard} me={me} isMyTurn={isMyTurn} />
       )}
-      {!needDream && state.pendingFastTrackTile && (
+      {!needDream && !walking && state.pendingFastTrackTile && (
         <FastTrackModal tile={state.pendingFastTrackTile} me={me} isMyTurn={isMyTurn} dreams={dreams} />
       )}
-      {!needDream && state.awaitingDealChoice && isMyTurn && (
+      {!needDream && !walking && state.awaitingDealChoice && isMyTurn && (
         <div className="modal-backdrop">
           <div className="modal deal-choice">
             <h3>{t('card.chooseDeal')}</h3>
@@ -304,6 +385,21 @@ export default function Game() {
         </div>
       )}
       {state.status === 'finished' && <WinnerOverlay state={state} />}
+
+      {rollFx && (
+        <div className="roll-overlay">
+          <div className="roll-card">
+            <div className="roll-dice">
+              {rollFx.values.map((v, i) => (
+                <span className="roll-die" key={i}>
+                  {v}
+                </span>
+              ))}
+            </div>
+            <div className="roll-total">{t('game.rolled', { total: rollFx.total })}</div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -5,3 +5,4 @@ todo/
 coverage/
 countLinesAndFiles.sh
 counter.sh
+.playwright-mcp/

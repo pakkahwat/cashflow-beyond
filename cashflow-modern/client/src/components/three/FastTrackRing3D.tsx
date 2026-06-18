@@ -88,24 +88,27 @@ export default function FastTrackRing3D({
         );
       })}
 
-      {ring.map((pt, idx) => {
-        const tokens = tokensByCell[idx] || [];
-        return tokens.map((p, i) => {
-          const { dx, dz } = tokenSlotOffset(i, tokens.length, 0.45);
-          return (
-            <Token3D
-              key={p.id}
-              targetIndex={idx}
-              count={tiles.length || 32}
-              radius={FT_RADIUS}
-              dx={dx}
-              dz={dz}
-              color={p.color}
-              current={p.id === currentId}
-              reducedMotion={reducedMotion}
-            />
-          );
-        });
+      {/* Flat, id-keyed token list so each token's instance survives tile changes
+          and Token3D can animate the walk (see RatRaceRing3D for the rationale). */}
+      {ftPlayers.map((p) => {
+        const mates = tokensByCell[p.fastTrackPosition] || [p];
+        const slot = Math.max(0, mates.findIndex((m) => m.id === p.id));
+        const { dx, dz } = tokenSlotOffset(slot, mates.length, 0.45);
+        return (
+          <Token3D
+            key={p.id}
+            targetIndex={p.fastTrackPosition}
+            count={tiles.length || 32}
+            radius={FT_RADIUS}
+            dx={dx}
+            dz={dz}
+            color={p.color}
+            current={p.id === currentId}
+            reducedMotion={reducedMotion}
+            name={p.username}
+            variant={players.findIndex((pp) => pp.id === p.id) % 6}
+          />
+        );
       })}
     </group>
   );
