@@ -12,7 +12,7 @@ export interface Tile3DProps {
 }
 
 const TILE_W = 1.6;
-const TILE_H = 0.35;
+const TILE_H = 0.42;
 const TILE_D = 1.15;
 
 export default function Tile3D({
@@ -46,7 +46,7 @@ export default function Tile3D({
             emissiveIntensity={0.85}
           />
         ) : (
-          <meshStandardMaterial color={color} roughness={0.55} metalness={0.15} />
+          <meshStandardMaterial color={color} roughness={0.5} metalness={0.28} />
         )}
         {active && <Outlines thickness={4} color="#ffd766" transparent opacity={0.9} />}
       </RoundedBox>

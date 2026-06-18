@@ -4,46 +4,71 @@ import { Outlines } from '@react-three/drei';
 import * as THREE from 'three';
 
 export interface Token3DProps {
-  target: [number, number, number];
+  targetIndex: number; // tile index on the ring (0-based)
+  count: number; // tiles in the ring
+  radius: number;
+  dx: number; // small world offset so co-located tokens don't overlap
+  dz: number;
   color: string;
   current: boolean;
   reducedMotion: boolean;
 }
 
-const BASE_Y = 0.45; // sits on top of the tiles
+const BASE_Y = 0.5;
+const SPEED = 6; // tiles per second while walking
 
-export default function Token3D({ target, color, current, reducedMotion }: Token3DProps) {
+export default function Token3D({
+  targetIndex,
+  count,
+  radius,
+  dx,
+  dz,
+  color,
+  current,
+  reducedMotion
+}: Token3DProps) {
   const ref = useRef<THREE.Group>(null!);
-  const t = useRef(0);
+  const cur = useRef(targetIndex); // fractional current tile index
   const inited = useRef(false);
+
+  const posAt = (i: number): [number, number] => {
+    const a = -Math.PI / 2 + i * ((2 * Math.PI) / count);
+    return [radius * Math.cos(a) + dx, radius * Math.sin(a) + dz];
+  };
 
   useFrame((_, delta) => {
     const g = ref.current;
     if (!g) return;
-    const [tx, , tz] = target;
-    // First frame (or reduced motion): snap to the target, no animation.
     if (!inited.current || reducedMotion) {
-      g.position.set(tx, BASE_Y, tz);
+      cur.current = targetIndex;
+      const [x, z] = posAt(targetIndex);
+      g.position.set(x, BASE_Y, z);
       inited.current = true;
       return;
     }
-    const dist = Math.hypot(tx - g.position.x, tz - g.position.z);
-    // lerp horizontally toward the target
-    g.position.x = THREE.MathUtils.lerp(g.position.x, tx, Math.min(1, delta * 6));
-    g.position.z = THREE.MathUtils.lerp(g.position.z, tz, Math.min(1, delta * 6));
-    // hop while travelling, settle to BASE_Y when arrived
-    if (dist > 0.05) {
-      t.current += delta * 8;
-      g.position.y = BASE_Y + Math.abs(Math.sin(t.current)) * 0.4;
+    // Always walk FORWARD around the ring (wrap), stepping tile by tile.
+    let diff = targetIndex - cur.current;
+    while (diff < -0.0001) diff += count;
+    if (diff > 0.02) {
+      cur.current += Math.min(diff, delta * SPEED);
+      if (cur.current >= count) cur.current -= count;
+      const [x, z] = posAt(cur.current);
+      g.position.x = x;
+      g.position.z = z;
+      // hop: lands (y=BASE_Y) on each tile, peaks between tiles
+      g.position.y = BASE_Y + Math.abs(Math.sin(cur.current * Math.PI)) * 0.35;
     } else {
-      t.current = 0;
+      cur.current = targetIndex;
+      const [x, z] = posAt(targetIndex);
+      g.position.x = x;
+      g.position.z = z;
       g.position.y = THREE.MathUtils.lerp(g.position.y, BASE_Y, Math.min(1, delta * 8));
     }
   });
 
   return (
     <group ref={ref}>
-      <mesh castShadow position={[0, 0, 0]}>
+      <mesh castShadow>
         <cylinderGeometry args={[0.22, 0.3, 0.18, 24]} />
         <meshStandardMaterial color={color} roughness={0.4} metalness={0.3} />
       </mesh>

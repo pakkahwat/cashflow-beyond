@@ -25,6 +25,9 @@ export default function Lighting({ quality }: LightingProps) {
         shadow-camera-far={40}
       />
       <directionalLight position={[-8, 5, -6]} intensity={0.45} color="#5b6bff" />
+      {/* dramatic key spot over the board + subtle glow rising from the center */}
+      <spotLight position={[0, 16, 2]} angle={0.55} penumbra={0.9} intensity={high ? 1.4 : 1} color="#dce6ff" />
+      <pointLight position={[0, 1.6, 0]} intensity={0.7} distance={11} color="#3aa0ff" />
       {/* Art-directed studio reflections — no remote HDRI fetch. */}
       <Environment resolution={256} environmentIntensity={0.6}>
         <Lightformer form="ring" intensity={2} position={[0, 9, 0]} scale={12} color="#9fb4ff" />

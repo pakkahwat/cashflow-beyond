@@ -4,6 +4,7 @@ import { ringPositions, ratTileColor, tokenSlotOffset } from '../../lib/boardLay
 import type { PublicPlayer } from '../../lib/types';
 import Tile3D from './Tile3D';
 import Token3D from './Token3D';
+import BoardBase from './BoardBase';
 
 export interface RatRaceRing3DProps {
   players: PublicPlayer[];
@@ -34,11 +35,7 @@ export default function RatRaceRing3D({
 
   return (
     <group>
-      {/* board disc */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.05, 0]} receiveShadow={quality === 'high'}>
-        <circleGeometry args={[RAT_RADIUS + 1.4, 64]} />
-        <meshStandardMaterial color="#15203c" roughness={0.45} metalness={0.55} />
-      </mesh>
+      <BoardBase radius={RAT_RADIUS} quality={quality} />
 
       {ring.map((pt, idx) => {
         const position = idx + 1; // 1..24
@@ -69,7 +66,11 @@ export default function RatRaceRing3D({
           return (
             <Token3D
               key={p.id}
-              target={[pt.x + dx, 0.45, pt.z + dz]}
+              targetIndex={idx}
+              count={TILE_COUNT}
+              radius={RAT_RADIUS}
+              dx={dx}
+              dz={dz}
               color={p.color}
               current={p.id === currentId}
               reducedMotion={reducedMotion}

@@ -2,9 +2,19 @@
 .board3d-wrap {
   position: relative;
   width: 100%;
-  max-width: min(74vh, 720px);
+  max-width: min(76vh, 820px);
   margin: 0 auto;
   aspect-ratio: 1 / 1;
+}
+/* Bigger board on bigger screens (scales with both viewport height and width). */
+@media (min-width: 1400px) {
+  .board3d-wrap { max-width: min(80vh, 1040px); }
+}
+@media (min-width: 1800px) {
+  .board3d-wrap { max-width: min(84vh, 1260px); }
+}
+@media (min-width: 2300px) {
+  .board3d-wrap { max-width: min(86vh, 1480px); }
 }
 .board3d-canvas {
   position: absolute;
