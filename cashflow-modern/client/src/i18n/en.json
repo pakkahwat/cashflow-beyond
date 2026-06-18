@@ -112,6 +112,7 @@
     "youOwn": "You own {{count}} units",
     "insufficient": "Not enough cash",
     "marketSell": "Market offer to buy",
+    "othersSell": "You hold this stock — you may sell at this price",
     "noAsset": "You have no asset matching this card"
   },
   "fastTrack": {
@@ -137,7 +138,14 @@
   "bankrupt": {
     "title": "Negative cash!",
     "message": "You must take a loan or sell assets to recover",
-    "liquidate": "Sell all assets"
+    "liquidate": "Sell all assets",
+    "confirmTitle": "Sell everything?",
+    "confirmBody": "This sells all of your assets at half price to cover your debt. If your cash is still negative afterward, you go bankrupt and are out of the game immediately.",
+    "confirmYes": "Yes, sell all",
+    "cancel": "Cancel",
+    "outTitle": "You went bankrupt 💀",
+    "outMessage": "You're out of the game — wait for it to finish or start a new game.",
+    "watch": "Keep watching"
   },
   "errors": {
     "name_required": "Please enter a name",
@@ -154,6 +162,14 @@
     "bankrupt": "A bankrupt player cannot borrow",
     "already_owned": "You already own this investment",
     "not_charity": "Not a charity card",
+    "cannot_pay": "Cannot pay down this debt",
+    "cannot_sell": "Cannot sell",
+    "not_eligible": "Not yet eligible to leave the Rat Race",
+    "already_fast_track": "You are already on the Fast Track",
+    "need_players": "Need at least 2 players",
+    "invalid_dream": "Invalid dream selection",
+    "not_your_dream": "This is not your dream",
+    "no_connection": "Connection lost — reconnecting",
     "timeout": "The server did not respond — please retry",
     "generic": "Action failed"
   }

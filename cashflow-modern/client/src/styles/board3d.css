@@ -161,13 +161,27 @@
   max-height: 100vh;
   overflow-y: auto;
 }
+/* Keep the financial summary visible in fullscreen as a compact floating bar
+   (it used to be hidden, which made cash / passive income / cashflow disappear). */
 .game-screen:fullscreen .play-panel {
-  display: none;
+  position: fixed;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  z-index: 30;
+  width: min(720px, 94vw);
+  margin: 0;
+  background: rgba(13, 18, 38, 0.85);
+  backdrop-filter: blur(6px);
+  border: 1px solid var(--line, #2a3556);
+  border-radius: 14px;
+  padding: 8px 14px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
 }
 .game-screen:fullscreen .board3d-wrap,
 .game-screen:fullscreen .board {
-  max-width: min(86vh, 96%);
-  max-height: calc(100vh - 96px);
+  max-width: min(82vh, 96%);
+  max-height: calc(100vh - 150px);
 }
 
 /* player name floating above a 3D token */

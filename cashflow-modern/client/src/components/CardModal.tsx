@@ -157,6 +157,26 @@ export default function CardModal({ card, me, isMyTurn }: Props) {
               {t('card.skip')}
             </button>
           </div>
+        ) : card.type === 'stock' && ownedStock ? (
+          // Not your turn, but you hold this stock — you may still sell at the drawn price.
+          <div className="card-actions">
+            <p className="muted center">{t('card.othersSell')}</p>
+            <div className="qty-row">
+              <input
+                type="number"
+                min={1}
+                max={ownedStock.count}
+                value={count}
+                onChange={(e) =>
+                  setCount(Math.max(1, Math.min(ownedStock.count, Number(e.target.value))))
+                }
+              />
+              <button className="btn primary" onClick={() => act('sellStocks', { count })}>
+                {t('card.sell')} {count} ({money((card.price ?? 0) * count)})
+              </button>
+            </div>
+            <p className="muted center small">{t('game.waitingTurn')}</p>
+          </div>
         ) : (
           <p className="muted center">{t('game.waitingTurn')}</p>
         )}

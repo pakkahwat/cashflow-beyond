@@ -18,6 +18,20 @@ import { getMuted, setMuted } from '../lib/sfx';
 import { money, signed } from '../lib/format';
 import { FAST_TRACK_GOAL } from '../lib/constants';
 
+// Rejections that only happen when a click races the server state (duplicate click,
+// turn already advanced, roll already processed). They're not real failures, so we
+// swallow them silently instead of flashing an error toast at the player.
+const BENIGN_ERRORS = new Set([
+  'already_rolled',
+  'not_your_turn',
+  'must_roll_first',
+  'resolve_card_first',
+  'no_pending_card',
+  'no_deal_choice',
+  'no_pending_tile',
+  'game_not_started'
+]);
+
 export default function Game() {
   const { t } = useTranslation();
   const state = useGame((s) => s.state);
@@ -34,6 +48,19 @@ export default function Game() {
   const use3d = render3d && webglOk;
   const reset = useGame((s) => s.reset);
   const [muted, setMutedState] = useState(getMuted());
+  // Blocks a second turn action from firing while the first is still in flight.
+  // Without this, Roll/End Turn stay clickable for one round-trip (their disabled
+  // state only updates when the server broadcast arrives), so a double-click or an
+  // impatient re-click on a laggy connection sends a duplicate the server rejects.
+  const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
+  // Confirm before liquidating everything — it can bankrupt the player and remove them.
+  const [confirmLiquidate, setConfirmLiquidate] = useState(false);
+  // One-time "you're out" notice after going bankrupt (dismissable so they can keep watching).
+  const [bankruptAck, setBankruptAck] = useState(false);
+  // Holds the current "what Space should do" action; reassigned each render once
+  // canRoll/canEnd are known (they're computed after the early return below).
+  const spaceActionRef = useRef<(() => boolean) | null>(null);
 
   const [showProfession, setShowProfession] = useState(false);
   useEffect(() => {
@@ -92,6 +119,22 @@ export default function Game() {
   }, [eventToast]);
   useEffect(() => () => { if (walkTimer.current) clearTimeout(walkTimer.current); }, []);
 
+  // Spacebar = roll (when you can) or end turn (when you can). Attached once; it
+  // reads the latest action via spaceActionRef so it always reflects current state.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code !== 'Space' && e.key !== ' ') return;
+      const el = e.target as HTMLElement | null;
+      const tag = el?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || el?.isContentEditable) return;
+      // Only intercept Space if there's actually a roll/end action available, so it
+      // doesn't swallow Space inside choice dialogs or while it isn't your turn.
+      if (spaceActionRef.current?.()) e.preventDefault();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
   if (!state) return null;
 
   const isMyTurn = state.currentPlayerId === myId;
@@ -100,8 +143,19 @@ export default function Game() {
   const needDream = !!me && state.awaitingDreamChoice.includes(myId);
 
   const send = async (event: string, payload?: any) => {
-    const res = await emit(event, payload);
-    if (!res.ok) setError(res.error || 'generic');
+    if (busyRef.current) return; // ignore re-clicks while a turn action is in flight
+    busyRef.current = true;
+    setBusy(true);
+    try {
+      const res = await emit(event, payload);
+      // Errors caused by a duplicate/stale click (the server already advanced the
+      // turn or processed the roll) are harmless races — don't show a scary toast.
+      if (!res.ok && res.error && !BENIGN_ERRORS.has(res.error)) setError(res.error);
+      else if (!res.ok && !res.error) setError('generic');
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+    }
   };
 
   // Leave the room and return Home to start a brand-new game.
@@ -127,6 +181,21 @@ export default function Game() {
     !needRescue;
   const showDiceChoice = canRoll && me?.phase === 'ratRace' && (me?.extraDiceTurns ?? 0) > 0;
   const showFtDiceChoice = canRoll && me?.phase === 'fastTrack' && !!me?.ftCharityDice;
+
+  // Space rolls (default dice) or ends the turn. Skip when the player must first pick
+  // how many dice to roll (a choice Space can't make) or while a modal is up / walking.
+  spaceActionRef.current = () => {
+    if (busyRef.current || walking) return false;
+    if (canRoll && !showDiceChoice && !showFtDiceChoice) {
+      send('rollDice', { diceCount: me?.phase === 'fastTrack' ? 2 : 1 });
+      return true;
+    }
+    if (canEnd) {
+      send('endTurn');
+      return true;
+    }
+    return false;
+  };
 
   // --- turn banner (DOM in both 2D and 3D paths) ---
   const turnBanner = (
@@ -229,35 +298,35 @@ export default function Game() {
       <div className="turn-controls">
         {showDiceChoice ? (
           <>
-            <button className="btn primary" onClick={() => send('rollDice', { diceCount: 1 })}>
+            <button className="btn primary" disabled={busy} onClick={() => send('rollDice', { diceCount: 1 })}>
               {t('game.roll1')}
             </button>
-            <button className="btn primary" onClick={() => send('rollDice', { diceCount: 2 })}>
+            <button className="btn primary" disabled={busy} onClick={() => send('rollDice', { diceCount: 2 })}>
               {t('game.roll2')}
             </button>
           </>
         ) : showFtDiceChoice ? (
           <>
-            <button className="btn primary" onClick={() => send('rollDice', { diceCount: 1 })}>
+            <button className="btn primary" disabled={busy} onClick={() => send('rollDice', { diceCount: 1 })}>
               {t('game.roll1')}
             </button>
-            <button className="btn primary" onClick={() => send('rollDice', { diceCount: 2 })}>
+            <button className="btn primary" disabled={busy} onClick={() => send('rollDice', { diceCount: 2 })}>
               {t('game.roll2')}
             </button>
-            <button className="btn primary" onClick={() => send('rollDice', { diceCount: 3 })}>
+            <button className="btn primary" disabled={busy} onClick={() => send('rollDice', { diceCount: 3 })}>
               {t('game.roll3')}
             </button>
           </>
         ) : (
           <button
             className="btn primary big"
-            disabled={!canRoll}
+            disabled={!canRoll || busy}
             onClick={() => send('rollDice', { diceCount: me?.phase === 'fastTrack' ? 2 : 1 })}
           >
             🎲 {t('game.roll')}
           </button>
         )}
-        <button className="btn" disabled={!canEnd} onClick={() => send('endTurn')}>
+        <button className="btn" disabled={!canEnd || busy} onClick={() => send('endTurn')}>
           {t('game.endTurn')} ➜
         </button>
       </div>
@@ -266,7 +335,7 @@ export default function Game() {
         <div className="rescue">
           <b>{t('bankrupt.title')}</b>
           <p>{t('bankrupt.message')}</p>
-          <button className="btn warn" onClick={() => send('liquidate')}>
+          <button className="btn warn" onClick={() => setConfirmLiquidate(true)}>
             {t('bankrupt.liquidate')}
           </button>
         </div>
@@ -384,6 +453,44 @@ export default function Game() {
               <button className="btn primary big" onClick={() => send('chooseDeal', { size: 'big' })}>
                 🏢 {t('card.bigDeal')}
                 <small>{t('card.bigDealHint')}</small>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {confirmLiquidate && (
+        <div className="modal-backdrop">
+          <div className="modal">
+            <h3>{t('bankrupt.confirmTitle')}</h3>
+            <p>{t('bankrupt.confirmBody')}</p>
+            <div className="deal-choice-row">
+              <button className="btn" onClick={() => setConfirmLiquidate(false)}>
+                {t('bankrupt.cancel')}
+              </button>
+              <button
+                className="btn warn big"
+                onClick={() => {
+                  setConfirmLiquidate(false);
+                  send('liquidate');
+                }}
+              >
+                {t('bankrupt.confirmYes')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {me?.isBankrupt && !bankruptAck && state.status !== 'finished' && (
+        <div className="modal-backdrop">
+          <div className="modal">
+            <h3>{t('bankrupt.outTitle')}</h3>
+            <p>{t('bankrupt.outMessage')}</p>
+            <div className="deal-choice-row">
+              <button className="btn" onClick={() => setBankruptAck(true)}>
+                {t('bankrupt.watch')}
+              </button>
+              <button className="btn primary big" onClick={newGame}>
+                {t('game.newGame')}
               </button>
             </div>
           </div>

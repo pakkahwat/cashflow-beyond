@@ -317,10 +317,25 @@ export class Game {
   // ---------- Card actions ----------
 
   cardAction(id: string, action: string, payload: any = {}): ActionResult {
-    if (!this.isCurrent(id)) return fail('not_your_turn');
-    const p = this.currentPlayer;
     const card = this.pendingCard;
     if (!card) return fail('no_pending_card');
+
+    // A pending stock card is a market event for EVERYONE: any player holding that
+    // symbol may sell at the drawn price even when it isn't their turn. Only the
+    // current player may buy or otherwise resolve the card (and end the turn).
+    if (!this.isCurrent(id)) {
+      if (action === 'sellStocks' && card.type === 'stock') {
+        const seller = this.players.find((pl) => pl.id === id);
+        if (!seller || seller.isBankrupt) return fail('no_player');
+        const count = Number(payload.count) || 0;
+        if (!seller.sellStocks(card, count)) return fail('cannot_sell');
+        this.log(seller, `sold ${count} ${card.symbol} @ $${card.price}`);
+        return ok();
+      }
+      return fail('not_your_turn');
+    }
+
+    const p = this.currentPlayer;
 
     switch (action) {
       case 'skip':

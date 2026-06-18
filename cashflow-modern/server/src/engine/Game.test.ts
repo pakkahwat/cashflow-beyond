@@ -116,6 +116,32 @@ describe('Dream chosen at setup + cost escalation (M4/L8)', () => {
   });
 });
 
+describe('Shared stock sale — other holders may sell on landing (#4)', () => {
+  it('lets a non-current holder sell the same stock at the drawn price, but not buy', () => {
+    const g = start2();
+    const cur = g.currentPlayer;
+    const other = g.players.find((p) => p.id !== cur.id)!;
+    other.assets.stocks.push({ id: 's', type: 'stock', symbol: 'MYT4U', price: 20, count: 10 });
+    const otherCashBefore = other.cash;
+
+    // current player lands on a MYT4U stock card priced at $40
+    (g as any).pendingCard = { id: 'sc', type: 'stock', symbol: 'MYT4U', price: 40 };
+    (g as any).hasRolled = true;
+
+    // non-current holder sells all 10 @ $40
+    const sell = g.cardAction(other.id, 'sellStocks', { count: 10 });
+    expect(sell.ok).toBe(true);
+    expect(other.cash).toBe(otherCashBefore + 40 * 10);
+    expect(other.assets.stocks.find((s) => s.symbol === 'MYT4U')).toBeUndefined();
+    // the card stays on the table for the current player to resolve
+    expect((g as any).pendingCard).not.toBeNull();
+
+    // a non-current player may NOT buy, and may not sell what they don't hold
+    expect(g.cardAction(other.id, 'buyStocks', { count: 1 }).ok).toBe(false);
+    expect(g.cardAction(other.id, 'sellStocks', { count: 1 }).ok).toBe(false);
+  });
+});
+
 describe('Start guards (L2 + L10)', () => {
   it('needs >= 2 players and starts on a valid current player', () => {
     const solo = new Game('R');
