@@ -13,8 +13,8 @@ assign([6, 14, 22], 'payday');
 assign([8, 16, 24], 'market');
 assign([2, 10, 18], 'doodad');
 assign([4], 'charity');
-assign([12], 'downsized');
-assign([20], 'baby');
+assign([20], 'downsized');
+assign([12], 'baby');
 
 export const ratRaceTileType = (position: number): TileType => TILE_MAP[position];
 

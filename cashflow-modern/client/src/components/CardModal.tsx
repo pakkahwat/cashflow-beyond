@@ -4,6 +4,7 @@ import { emit } from '../lib/socket';
 import { useGame } from '../store/gameStore';
 import type { Card, PublicPlayer } from '../lib/types';
 import { money } from '../lib/format';
+import { cardsTh } from '../i18n/contentTh';
 
 interface Props {
   card: Card;
@@ -12,9 +13,16 @@ interface Props {
 }
 
 export default function CardModal({ card, me, isMyTurn }: Props) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const lng = i18n.language?.startsWith('th') ? 'th' : 'en';
   const setError = useGame((s) => s.setError);
   const [count, setCount] = useState(1);
+
+  const th = lng === 'th' ? cardsTh[card.id] : undefined;
+  const heading = th?.heading ?? card.heading;
+  const description = th?.description ?? card.description;
+  const rule = th?.rule ?? card.rule;
+  const subRule = th?.subRule ?? card.subRule;
 
   const act = async (action: string, payload?: any) => {
     const res = await emit('cardAction', { action, payload });
@@ -33,11 +41,11 @@ export default function CardModal({ card, me, isMyTurn }: Props) {
       <div className={`modal card-modal card-${card.type}`}>
         <div className="card-head">
           <span className="card-type-badge">{card.symbol || card.type}</span>
-          <h3>{card.heading}</h3>
+          <h3>{heading}</h3>
         </div>
-        {card.description && <p className="card-desc">{card.description}</p>}
-        {card.rule && <p className="card-rule">{card.rule}</p>}
-        {card.subRule?.map((s, i) => (
+        {description && <p className="card-desc">{description}</p>}
+        {rule && <p className="card-rule">{rule}</p>}
+        {subRule?.map((s, i) => (
           <p className="card-subrule" key={i}>• {s}</p>
         ))}
 
@@ -140,6 +148,11 @@ export default function CardModal({ card, me, isMyTurn }: Props) {
               </div>
             )}
 
+            {card.type === 'charity' && (
+              <button className="btn primary" onClick={() => act('donate')}>
+                {t('card.donate')}
+              </button>
+            )}
             <button className="btn ghost" onClick={() => act('skip')}>
               {t('card.skip')}
             </button>

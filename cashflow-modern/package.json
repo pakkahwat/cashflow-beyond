@@ -11,7 +11,8 @@
     "build": "npm --prefix client run build",
     "preview": "npm run build && npm --prefix worker run dev",
     "deploy": "npm run build && npm --prefix worker run deploy",
-    "typecheck": "npm --prefix client run typecheck && npm --prefix worker run typecheck"
+    "typecheck": "npm --prefix client run typecheck && npm --prefix worker run typecheck",
+    "test": "npm --prefix server run test"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"

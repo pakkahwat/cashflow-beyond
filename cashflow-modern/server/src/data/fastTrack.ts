@@ -38,7 +38,7 @@ export const FAST_TRACK_BOARD: FastTrackTile[] = [
   { index: 17, kind: 'dream', id: 'politics' },
   { index: 18, kind: 'cashflowDay' },
   { index: 19, kind: 'investment', id: 'oilwells', name: 'Oil wells', nameTh: 'บ่อน้ำมัน', cost: 90000, cashFlow: 9000 },
-  { index: 20, kind: 'loss', name: 'Lawsuit — pay $50,000', nameTh: 'ถูกฟ้องร้อง — จ่าย $50,000', amount: 50000 },
+  { index: 20, kind: 'loss', name: 'Lawsuit — pay half your cash', nameTh: 'ถูกฟ้องร้อง — จ่ายเงินสดครึ่งหนึ่ง', half: true },
   { index: 21, kind: 'dream', id: 'penthouse' },
   { index: 22, kind: 'investment', id: 'shoppingmall', name: 'Shopping mall', nameTh: 'ศูนย์การค้า', cost: 220000, cashFlow: 22000 },
   { index: 23, kind: 'cashflowDay' },
@@ -49,7 +49,7 @@ export const FAST_TRACK_BOARD: FastTrackTile[] = [
   { index: 28, kind: 'dream', id: 'foundation' },
   { index: 29, kind: 'cashflowDay' },
   { index: 30, kind: 'investment', id: 'datacenter', name: 'Data center', nameTh: 'ศูนย์ข้อมูล', cost: 260000, cashFlow: 26000 },
-  { index: 31, kind: 'loss', name: 'Divorce — pay half your cash', nameTh: 'หย่าร้าง — จ่ายเงินสดครึ่งหนึ่ง', half: true }
+  { index: 31, kind: 'loss', name: 'Divorce — pay all your cash', nameTh: 'หย่าร้าง — จ่ายเงินสดทั้งหมด', full: true }
 ];
 
 export const FAST_TRACK_SIZE = FAST_TRACK_BOARD.length;

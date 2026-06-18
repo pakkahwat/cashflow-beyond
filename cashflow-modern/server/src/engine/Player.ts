@@ -51,6 +51,7 @@ export class Player {
   skippedTurns = 0;
   extraDiceTurns = 0; // charity bonus: may roll 1 or 2 dice
   hasMlm = false;
+  ftCharityDice = false; // Fast Track charity: may roll 1/2/3 dice for the rest of the game
   isBankrupt = false;
   hasWon = false;
 
@@ -146,6 +147,7 @@ export class Player {
     const amount = this.totalExpenses;
     this.record(-amount, 'Downsized');
     this.skippedTurns = 2;
+    this.extraDiceTurns = 0; // Downsized ends the Charity dice bonus
     return amount;
   }
 
@@ -177,6 +179,7 @@ export class Player {
     };
     this.assets.realEstates.push(asset);
     this.income.realEstates.push(asset);
+    this.liabilities.realEstates.push(asset);
     this.record(-down, `Buy ${asset.symbol}`);
     return true;
   }
@@ -196,6 +199,7 @@ export class Player {
     };
     this.assets.businesses.push(asset);
     this.income.businesses!.push(asset);
+    if (asset.mortgage) this.liabilities.realEstates.push(asset as unknown as RealEstateAsset);
     this.record(-down, `Buy ${asset.symbol}`);
     return true;
   }
@@ -267,6 +271,7 @@ export class Player {
     const proceeds = re.cost + gain - re.mortgage;
     this.assets.realEstates.splice(idx, 1);
     this.income.realEstates = this.income.realEstates.filter((r) => r.id !== id);
+    this.liabilities.realEstates = this.liabilities.realEstates.filter((r) => r.id !== id);
     this.record(proceeds, `Sell ${re.symbol}`);
     return true;
   }
@@ -304,6 +309,11 @@ export class Player {
     if (typeof this.liabilities[type] !== 'number') return false;
     const debt = this.liabilities[type] as number;
     if (amount <= 0 || amount > debt || this.cash < amount) return false;
+    if (type === 'bankLoan') {
+      if (amount % 1000 !== 0) return false; // bank loans repay in $1,000 units
+    } else if (amount !== debt) {
+      return false; // non-bank debts must be paid in full
+    }
     (this.liabilities[type] as number) -= amount;
     if (type === 'bankLoan') {
       this.expenses.bankLoanPayment = this.liabilities.bankLoan / 10;
@@ -334,6 +344,14 @@ export class Player {
     this.income.realEstates = [];
     this.income.businesses = [];
     this.record(Math.round(proceeds), 'Liquidated all assets');
+    if (this.cash < 0) {
+      // Debt relief: the bank forgives half of consumer debt (car + credit) and
+      // halves their monthly payments. Mortgage and school loans remain.
+      this.liabilities.carLoans = Math.round(this.liabilities.carLoans / 2);
+      this.liabilities.creditCardDebt = Math.round(this.liabilities.creditCardDebt / 2);
+      this.expenses.carLoanPayment = Math.round(this.expenses.carLoanPayment / 2);
+      this.expenses.creditCardPayment = Math.round(this.expenses.creditCardPayment / 2);
+    }
     if (this.cash < 0) this.isBankrupt = true;
   }
 
@@ -366,15 +384,17 @@ export class Player {
     return amount;
   }
 
-  buyFastTrackInvestment(cost: number, cashFlow: number, name: string): boolean {
+  buyFastTrackInvestment(cost: number, cashFlow: number, name: string, id: string): boolean {
+    if (this.ownedInvestments.has(id)) return false;
     if (this.cash < cost) return false;
     this.record(-cost, `Invest: ${name}`);
     this.fastTrackCashFlowGain += cashFlow;
+    this.ownedInvestments.add(id);
     return true;
   }
 
-  payFastTrackLoss(amount: number, half: boolean, label: string): number {
-    const pay = half ? Math.round(this.cash / 2) : amount;
+  payFastTrackLoss(amount: number, half: boolean, label: string, full = false): number {
+    const pay = full ? this.cash : half ? Math.round(this.cash / 2) : amount;
     this.record(-pay, label);
     return pay;
   }
@@ -410,6 +430,7 @@ export class Player {
       skippedTurns: this.skippedTurns,
       extraDiceTurns: this.extraDiceTurns,
       hasMlm: this.hasMlm,
+      ftCharityDice: this.ftCharityDice,
       isBankrupt: this.isBankrupt,
       hasWon: this.hasWon
     };
@@ -442,6 +463,7 @@ export class Player {
       skippedTurns: this.skippedTurns,
       extraDiceTurns: this.extraDiceTurns,
       hasMlm: this.hasMlm,
+      ftCharityDice: this.ftCharityDice,
       isBankrupt: this.isBankrupt,
       hasWon: this.hasWon
     };

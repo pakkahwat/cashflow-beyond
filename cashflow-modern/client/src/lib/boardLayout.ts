@@ -16,8 +16,8 @@ set([6, 14, 22], 'payday');
 set([8, 16, 24], 'market');
 set([2, 10, 18], 'doodad');
 set([4], 'charity');
-set([12], 'downsized');
-set([20], 'baby');
+set([20], 'downsized');
+set([12], 'baby');
 
 export const ratTileType = (position: number): RatTileType => RAT_MAP[position] ?? 'deal';
 

@@ -1,0 +1,63 @@
+/* ============ 3D board canvas + overlay ============ */
+.board3d-wrap {
+  position: relative;
+  width: 100%;
+  max-width: min(74vh, 720px);
+  margin: 0 auto;
+  aspect-ratio: 1 / 1;
+}
+.board3d-canvas {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius, 16px);
+  overflow: hidden;
+  background: radial-gradient(circle at 50% 38%, #1b2747 0%, #0d1630 70%);
+  border: 1px solid var(--line, #2a3556);
+  box-shadow: 0 36px 70px rgba(0, 0, 0, 0.6);
+}
+.board3d-canvas canvas {
+  display: block;
+}
+.board3d-banner {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 4;
+  pointer-events: none;
+  min-width: 220px;
+}
+.board3d-banner .turn-banner {
+  background: rgba(20, 28, 56, 0.82);
+  backdrop-filter: blur(4px);
+}
+
+.view-toggles {
+  display: flex;
+  gap: 6px;
+}
+.view-btn {
+  background: var(--panel, #1a2340);
+  border: 1px solid var(--line, #2a3556);
+  color: var(--muted, #9fb0d0);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-family: var(--font, inherit);
+  font-weight: 600;
+  cursor: pointer;
+}
+.view-btn.active {
+  background: var(--primary, #2f6ff0);
+  color: #fff;
+  border-color: transparent;
+}
+.view-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+@media (max-width: 900px) {
+  .board3d-wrap {
+    max-width: 96vw;
+  }
+}

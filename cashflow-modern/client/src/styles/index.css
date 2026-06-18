@@ -105,7 +105,7 @@ input[type='number'] { width: 110px; }
 .waiting { color: var(--muted); }
 
 /* ---------- game layout ---------- */
-.game-screen { display: grid; grid-template-columns: 1fr 360px; gap: 16px; padding: 16px; min-height: 100vh; }
+.game-screen { display: grid; grid-template-columns: 1fr 360px; gap: 16px; padding: 58px 16px 16px; min-height: 100vh; }
 .board-area { display: flex; flex-direction: column; min-width: 0; }
 .board-topbar { display: flex; justify-content: space-between; margin-bottom: 10px; }
 .phase-pill, .room-pill { background: var(--panel); border: 1px solid var(--line); padding: 6px 14px; border-radius: 999px; font-weight: 600; }
@@ -262,6 +262,66 @@ input[type='number'] { width: 110px; }
 .token {
   transition: transform 0.25s ease;
   box-shadow: 0 3px 6px rgba(0, 0, 0, 0.5);
+}
+
+/* ============ Responsive ============ */
+/* Tablet / small laptop: stack the side panel under the board (single column). */
+@media (max-width: 960px) {
+  .game-screen {
+    grid-template-columns: 1fr;
+    padding: 56px 12px 14px;
+    gap: 12px;
+    min-height: auto;
+  }
+  .side-panel { overflow: visible; }
+  .board,
+  .board3d-wrap { max-width: min(92vw, 600px); }
+  .statement-panel { min-height: 240px; }
+  .log-panel { height: 150px; }
+}
+
+/* Phone */
+@media (max-width: 600px) {
+  .game-screen { padding: 50px 8px 14px; gap: 10px; }
+  .board-topbar { flex-wrap: wrap; gap: 6px; }
+  .phase-pill,
+  .room-pill,
+  .prof-pill { padding: 5px 10px; font-size: 12px; }
+  .view-toggles { margin-left: auto; }
+  .view-btn { padding: 5px 11px; }
+  .board,
+  .board3d-wrap { max-width: 96vw; }
+  .center-stack { max-width: 100%; }
+  .status-mini b { font-size: 14px; }
+  .die { font-size: 44px; }
+  .turn-controls { gap: 6px; }
+  .lang-toggle { top: 8px; right: 8px; }
+  .lang-toggle button { padding: 4px 9px; font-size: 13px; }
+  .modal { padding: 16px; max-height: 86vh; }
+  .card-stats { gap: 6px 12px; font-size: 13px; }
+  .dream-grid { grid-template-columns: 1fr 1fr; }
+  .winner-modal h2 { font-size: 26px; }
+  .board3d-banner { min-width: 0; max-width: 90vw; }
+}
+
+/* Narrow phone */
+@media (max-width: 400px) {
+  .logo { font-size: 40px; }
+  .status-mini { grid-template-columns: 1fr 1fr; gap: 6px; }
+  .deal-choice-row { flex-direction: column; }
+  .dream-grid { grid-template-columns: 1fr; }
+  .tabs button { padding: 8px 4px; font-size: 13px; }
+}
+
+/* Respect reduced-motion: calm the board tilt + token pulse */
+@media (prefers-reduced-motion: reduce) {
+  .rat-board,
+  .ft-board { transform: none; }
+  .board-center { transform: none; }
+  .token.current { animation: none; }
+  .tile,
+  .tile:hover,
+  .tile:has(.token.current) { transition: none; }
 }
 
 /* --- 3D dice --- */

@@ -46,6 +46,29 @@ export const onId = (cb: (id: string) => void) => {
 export const getMyId = () => playerId;
 export const savedRoom = () => localStorage.getItem(LS.room);
 
+let reconnectAttempts = 0;
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Reconnect with exponential backoff and re-join the saved room. No-op after an
+ *  intentional leave (forget() clears LS.room). */
+const scheduleReconnect = () => {
+  const roomId = localStorage.getItem(LS.room);
+  const name = localStorage.getItem(LS.name) || 'Player';
+  if (!roomId || reconnectTimer) return;
+  const delay = Math.min(10000, 500 * 2 ** reconnectAttempts);
+  reconnectTimer = setTimeout(async () => {
+    reconnectTimer = null;
+    reconnectAttempts += 1;
+    try {
+      await connect(roomId);
+      await emit('join', { intent: 'resume', playerId, username: name });
+      reconnectAttempts = 0;
+    } catch {
+      scheduleReconnect();
+    }
+  }, delay);
+};
+
 const connect = (roomId: string): Promise<void> =>
   new Promise((resolve, reject) => {
     if (ws && ws.readyState === WebSocket.OPEN) return resolve();
@@ -53,6 +76,7 @@ const connect = (roomId: string): Promise<void> =>
     let opened = false;
     ws.onopen = () => {
       opened = true;
+      reconnectAttempts = 0;
       resolve();
     };
     ws.onmessage = (e) => {
@@ -74,6 +98,7 @@ const connect = (roomId: string): Promise<void> =>
     };
     ws.onclose = () => {
       ws = null;
+      scheduleReconnect();
     };
   });
 
@@ -88,7 +113,7 @@ export const emit = (event: string, payload?: Record<string, unknown>): Promise<
     setTimeout(() => {
       if (pending.has(reqId)) {
         pending.delete(reqId);
-        resolve({ ok: true });
+        resolve({ ok: false, error: 'timeout' });
       }
     }, 8000);
   });

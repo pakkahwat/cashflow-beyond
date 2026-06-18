@@ -102,6 +102,7 @@ export interface PublicPlayer {
   skippedTurns: number;
   extraDiceTurns: number;
   hasMlm: boolean;
+  ftCharityDice: boolean;
   isBankrupt: boolean;
   hasWon: boolean;
 }
@@ -117,6 +118,8 @@ export interface GameState {
   pendingFastTrackTile: FastTrackTile | null;
   awaitingDealChoice: boolean;
   awaitingDreamChoice: string[];
+  awaitingFastTrackChoice: string | null;
+  dreamMarkers?: Record<string, number>;
   logs: { ts: number; player: string; color: string; message: string }[];
   winnerId: string | null;
 }

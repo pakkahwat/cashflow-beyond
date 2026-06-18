@@ -202,6 +202,9 @@ export class GameRoom {
       case 'chooseDream':
         res = g.chooseDream(playerId, p.dreamId);
         break;
+      case 'enterFastTrack':
+        res = g.enterFastTrack(playerId);
+        break;
       case 'fastTrackAction':
         res = g.fastTrackAction(playerId, p.action);
         break;

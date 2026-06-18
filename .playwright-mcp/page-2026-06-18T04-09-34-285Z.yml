@@ -1,0 +1,16 @@
+- generic [ref=e3]:
+  - generic [ref=e4]:
+    - button "ไทย" [ref=e5] [cursor=pointer]
+    - button "EN" [ref=e6] [cursor=pointer]
+  - generic [ref=e7]:
+    - generic [ref=e8]:
+      - heading "CASHFLOW" [level=1] [ref=e9]
+      - paragraph [ref=e10]: เกมกระดานสอนอิสรภาพทางการเงิน
+      - paragraph [ref=e11]: หนีออกจากวงจรหนูถีบจักร แล้วไปให้ถึงเส้นทางด่วน
+    - generic [ref=e12]:
+      - textbox "ใส่ชื่อผู้เล่นของคุณ" [ref=e13]
+      - button "สร้างห้องใหม่" [ref=e14] [cursor=pointer]
+      - generic [ref=e15]: หรือ
+      - generic [ref=e16]:
+        - textbox "รหัสห้อง (เช่น AB3KД)" [ref=e17]
+        - button "เข้าร่วม" [ref=e18] [cursor=pointer]

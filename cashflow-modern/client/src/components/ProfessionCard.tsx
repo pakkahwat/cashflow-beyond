@@ -1,9 +1,13 @@
 import { useTranslation } from 'react-i18next';
 import type { PublicPlayer } from '../lib/types';
 import { money, signed } from '../lib/format';
+import { professionsTh } from '../i18n/contentTh';
 
 export default function ProfessionCard({ me, onClose }: { me: PublicPlayer; onClose: () => void }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const lng = i18n.language?.startsWith('th') ? 'th' : 'en';
+  const professionName =
+    lng === 'th' ? professionsTh[me.professionName] ?? me.professionName : me.professionName;
   const e = me.expenses;
 
   return (
@@ -11,7 +15,7 @@ export default function ProfessionCard({ me, onClose }: { me: PublicPlayer; onCl
       <div className="modal profession-modal">
         <div className="prof-head">
           <span className="prof-badge">{t('profession.your')}</span>
-          <h2 className="prof-name">{me.professionName}</h2>
+          <h2 className="prof-name">{professionName}</h2>
           <p className="prof-goal">{t('stats.goal')}</p>
         </div>
 

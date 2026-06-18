@@ -172,6 +172,7 @@ export interface FastTrackTile {
   cashFlow?: number; // monthly cashflow gained when bought (investment)
   amount?: number; // loss amount, or 'half' marker via half flag
   half?: boolean; // loss = half of cash
+  full?: boolean; // loss = all of cash (e.g. Divorce)
 }
 
 export interface Dream {
@@ -220,6 +221,7 @@ export interface PublicPlayer {
   skippedTurns: number;
   extraDiceTurns: number; // charity: roll 1 or 2 dice for next N turns
   hasMlm: boolean;
+  ftCharityDice: boolean;
   isBankrupt: boolean;
   hasWon: boolean;
 }
@@ -237,6 +239,8 @@ export interface PublicGameState {
   pendingFastTrackTile: FastTrackTile | null;
   awaitingDealChoice: boolean; // landed on a deal tile, choose small/big
   awaitingDreamChoice: string[]; // player ids that must pick a dream
+  awaitingFastTrackChoice: string | null; // current player may choose to enter Fast Track
+  dreamMarkers: Record<string, number>; // extra-cost markers per dream id
   logs: { ts: number; player: string; color: string; message: string }[];
   winnerId: string | null;
 }

@@ -1450,7 +1450,7 @@
       ]
     },
     {
-      "id": "marketLottery03",
+      "id": "marketLottery03b",
       "type": "lottery",
       "lottery": "stock",
       "symbol": "MYT4U",
@@ -1699,7 +1699,7 @@
       ]
     },
     {
-      "id": "marketPlexBuyer16",
+      "id": "marketPlexBuyer17",
       "type": "realEstate",
       "symbol": "3Br/2Ba",
       "heading": "House Buyer - 3BR/2BA",

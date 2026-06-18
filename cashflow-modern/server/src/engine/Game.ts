@@ -53,6 +53,7 @@ export class Game {
   private pendingFastTrackTile: ReturnType<() => (typeof FAST_TRACK_BOARD)[number]> | null = null;
   private logs: { ts: number; player: string; color: string; message: string }[] = [];
   private winnerId: string | null = null;
+  private dreamMarkers: Record<string, number> = {};
 
   constructor(roomId: string) {
     this.roomId = roomId;
@@ -110,15 +111,18 @@ export class Game {
   start(byId: string): ActionResult {
     const host = this.host;
     if (!host || host.id !== byId) return fail('only_host_can_start');
-    if (this.players.length < 1) return fail('need_players');
+    if (this.players.length < 2) return fail('need_players');
     // assign unique professions + colors fresh
     const profs = shuffle(PROFESSIONS).slice(0, this.players.length);
     this.players.forEach((p, i) => {
       const fresh = new Player(p.id, p.username, COLORS[i % COLORS.length], p.isHost, profs[i]);
+      // Official setup: distribute one Monthly Cash Flow + Savings, then erase Savings.
+      fresh.cash = fresh.cashFlow + fresh.assets.savings;
+      fresh.assets.savings = 0;
       this.players[i] = fresh;
     });
     this.status = 'started';
-    this.currentIndex = 0;
+    this.currentIndex = Math.floor(Math.random() * this.players.length); // highest-roll-goes-first ≈ random
     this.beginTurn();
     this.log(this.currentPlayer, 'started the game');
     return ok();
@@ -187,8 +191,11 @@ export class Game {
     const p = this.currentPlayer;
 
     let count = 1;
-    if (p.phase === 'fastTrack') count = 2;
-    else if (p.extraDiceTurns > 0) count = diceCount === 2 ? 2 : 1;
+    if (p.phase === 'fastTrack') {
+      count = p.ftCharityDice ? Math.min(3, Math.max(1, diceCount || 2)) : 2;
+    } else if (p.extraDiceTurns > 0) {
+      count = diceCount === 2 ? 2 : 1;
+    }
 
     this.diceValues = Array.from({ length: count }, rollDie);
     const steps = this.diceValues.reduce((s, v) => s + v, 0);
@@ -267,7 +274,7 @@ export class Game {
       default:
         this.resolved = true;
     }
-    this.checkRatRaceExit();
+    /* Fast Track entry is a player choice now (M5) */
   }
 
   private autoResolveMarket(): void {
@@ -276,8 +283,16 @@ export class Game {
     if (!card) return;
     if (card.type === 'damage') {
       const res = p.payDamages(card);
-      if (res === 'noRealEstate') this.log(p, 'has no real estate — damage ignored');
-      else if (res === 'paid') this.log(p, `paid damages $${(card.cost ?? 0).toLocaleString()}`);
+      if (res === 'noRealEstate') {
+        this.log(p, 'has no real estate — damage ignored');
+      } else if (res === 'paid') {
+        this.log(p, `paid damages $${(card.cost ?? 0).toLocaleString()}`);
+      } else {
+        // Mandatory damage the player cannot afford: force the debit and let
+        // needsRescue() require them to resolve the debt before ending the turn.
+        p.forcePay(card.cost ?? 0, card.heading ?? 'Property damage');
+        this.log(p, `damages $${(card.cost ?? 0).toLocaleString()} exceed cash — must resolve debt`);
+      }
       this.pendingCard = null;
       this.resolved = true;
       return;
@@ -314,13 +329,22 @@ export class Game {
         this.resolved = true;
         return ok();
 
+      case 'donate': {
+        if (card.type !== 'charity') return fail('not_charity');
+        if (!p.charity()) return fail('insufficient_cash');
+        this.log(p, 'donated to charity — may roll 1 or 2 dice for 3 turns');
+        this.pendingCard = null;
+        this.resolved = true;
+        return ok();
+      }
+
       case 'buyRealEstate': {
         if (card.type !== 'realEstate') return fail('not_real_estate');
         if (!p.buyRealEstate(card)) return fail('insufficient_cash');
         this.log(p, `bought ${card.symbol} (+$${(card.cashFlow ?? 0).toLocaleString()}/mo)`);
         this.pendingCard = null;
         this.resolved = true;
-        this.checkRatRaceExit();
+        /* Fast Track entry is a player choice now (M5) */
         return ok();
       }
 
@@ -330,7 +354,7 @@ export class Game {
         this.log(p, `bought business ${card.symbol} (+$${(card.cashFlow ?? 0).toLocaleString()}/mo)`);
         this.pendingCard = null;
         this.resolved = true;
-        this.checkRatRaceExit();
+        /* Fast Track entry is a player choice now (M5) */
         return ok();
       }
 
@@ -377,7 +401,7 @@ export class Game {
         this.log(p, `sold real estate at market`);
         this.pendingCard = null;
         this.resolved = true;
-        this.checkRatRaceExit();
+        /* Fast Track entry is a player choice now (M5) */
         return ok();
       }
 
@@ -430,6 +454,8 @@ export class Game {
   takeLoan(id: string, amount: number): ActionResult {
     if (!this.isCurrent(id)) return fail('not_your_turn');
     const p = this.currentPlayer;
+    if (p.phase === 'fastTrack') return fail('no_loans_on_fast_track');
+    if (p.isBankrupt) return fail('bankrupt');
     if (!p.takeLoan(amount)) return fail('invalid_amount');
     this.log(p, `took a bank loan of $${amount.toLocaleString()}`);
     return ok();
@@ -457,12 +483,18 @@ export class Game {
 
   // ---------- Rat Race exit ----------
 
-  private checkRatRaceExit(): void {
+  // Fast Track entry is the player's CHOICE, offered at the start of their turn
+  // (getState().awaitingFastTrackChoice). It is no longer auto-forced (M5).
+  enterFastTrack(id: string): ActionResult {
+    if (!this.isCurrent(id)) return fail('not_your_turn');
     const p = this.currentPlayer;
-    if (p.phase === 'ratRace' && p.canExitRatRace() && !p.needsRescue()) {
-      p.enterFastTrack();
-      this.log(p, '🎉 escaped the Rat Race and entered the Fast Track!');
-    }
+    if (p.phase !== 'ratRace') return fail('already_fast_track');
+    if (this.hasRolled) return fail('already_rolled');
+    if (!p.canExitRatRace()) return fail('not_eligible');
+    if (p.needsRescue()) return fail('must_resolve_debt');
+    p.enterFastTrack();
+    this.log(p, '🎉 chose to escape the Rat Race and enter the Fast Track!');
+    return ok();
   }
 
   // ---------- Fast Track ----------
@@ -470,7 +502,7 @@ export class Game {
   chooseDream(id: string, dreamId: string): ActionResult {
     const p = this.players.find((pl) => pl.id === id);
     if (!p) return fail('no_player');
-    if (p.phase !== 'fastTrack') return fail('not_on_fast_track');
+    if (this.status !== 'started') return fail('game_not_started'); // chosen at setup (M4/L8)
     if (!DREAMS.some((d) => d.id === dreamId)) return fail('invalid_dream');
     p.dreamId = dreamId;
     const dream = DREAMS.find((d) => d.id === dreamId)!;
@@ -491,13 +523,13 @@ export class Game {
         break;
       }
       case 'charity': {
-        const ok2 = p.charity();
-        this.log(p, ok2 ? 'donated to charity (extra dice)' : 'could not afford charity');
+        p.ftCharityDice = true; // permanent: may roll 1/2/3 dice, no cost
+        this.log(p, 'donated to charity — may now roll 1, 2, or 3 dice on the Fast Track');
         this.resolved = true;
         break;
       }
       case 'loss': {
-        const paid = p.payFastTrackLoss(tile.amount ?? 0, !!tile.half, tile.name ?? 'Loss');
+        const paid = p.payFastTrackLoss(tile.amount ?? 0, !!tile.half, tile.name ?? 'Loss', !!tile.full);
         this.log(p, `${tile.name} — paid $${paid.toLocaleString()}`);
         this.resolved = true;
         break;
@@ -508,6 +540,11 @@ export class Game {
         this.resolved = false;
         break;
       case 'dream':
+        // Landing on someone else's Dream raises its cost to the owner by 100%/marker (M4).
+        if (tile.id && p.dreamId !== tile.id) {
+          this.dreamMarkers[tile.id] = (this.dreamMarkers[tile.id] ?? 0) + 1;
+          this.log(p, `landed on another player's dream — its price rises`);
+        }
         this.pendingFastTrackTile = tile;
         this.resolved = false;
         break;
@@ -531,7 +568,8 @@ export class Game {
     }
 
     if (tile.kind === 'investment') {
-      if (!p.buyFastTrackInvestment(tile.cost ?? 0, tile.cashFlow ?? 0, tile.name ?? 'investment')) {
+      if (p.ownedInvestments.has(tile.id ?? '')) return fail('already_owned');
+      if (!p.buyFastTrackInvestment(tile.cost ?? 0, tile.cashFlow ?? 0, tile.name ?? 'investment', tile.id ?? '')) {
         return fail('insufficient_cash');
       }
       this.log(p, `invested in ${tile.name} (+$${(tile.cashFlow ?? 0).toLocaleString()}/mo cashflow)`);
@@ -545,8 +583,10 @@ export class Game {
       const dream = DREAMS.find((d) => d.id === tile.id);
       if (!dream) return fail('invalid_dream');
       if (p.dreamId !== dream.id) return fail('not_your_dream');
-      if (p.cash < dream.cost) return fail('insufficient_cash');
-      p.forcePay(dream.cost, `Bought dream: ${dream.name}`);
+      const markers = this.dreamMarkers[dream.id] ?? 0;
+      const cost = dream.cost * (1 + markers);
+      if (p.cash < cost) return fail('insufficient_cash');
+      p.forcePay(cost, `Bought dream: ${dream.name}`);
       this.win(p, `bought their dream: ${dream.name}`);
       this.pendingFastTrackTile = null;
       this.resolved = true;
@@ -597,6 +637,7 @@ export class Game {
       pendingFastTrackTile: this.pendingFastTrackTile,
       logs: this.logs,
       winnerId: this.winnerId,
+      dreamMarkers: this.dreamMarkers,
       players: this.players.map((p) => p.toState())
     };
   }
@@ -613,13 +654,26 @@ export class Game {
     this.pendingFastTrackTile = s.pendingFastTrackTile ?? null;
     this.logs = s.logs ?? [];
     this.winnerId = s.winnerId ?? null;
+    this.dreamMarkers = s.dreamMarkers ?? {};
     this.players = (s.players ?? []).map((p: any) => Player.fromState(p));
   }
 
   getState(): PublicGameState {
-    const awaitingDreamChoice = this.players
-      .filter((p) => p.phase === 'fastTrack' && !p.dreamId && !p.isBankrupt)
-      .map((p) => p.id);
+    // Dream is chosen at setup (M4/L8): prompt every active player without one.
+    const awaitingDreamChoice =
+      this.status === 'started'
+        ? this.players.filter((p) => !p.dreamId && !p.isBankrupt).map((p) => p.id)
+        : [];
+    const cur = this.players.length ? this.currentPlayer : null;
+    const awaitingFastTrackChoice =
+      this.status === 'started' &&
+      cur &&
+      cur.phase === 'ratRace' &&
+      cur.canExitRatRace() &&
+      !cur.needsRescue() &&
+      !this.hasRolled
+        ? cur.id
+        : null;
     return {
       roomId: this.roomId,
       status: this.status,
@@ -631,6 +685,8 @@ export class Game {
       pendingFastTrackTile: this.pendingFastTrackTile,
       awaitingDealChoice: this.awaitingDealChoice,
       awaitingDreamChoice,
+      awaitingFastTrackChoice,
+      dreamMarkers: this.dreamMarkers,
       logs: this.logs,
       winnerId: this.winnerId
     };
