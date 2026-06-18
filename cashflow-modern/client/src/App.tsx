@@ -19,7 +19,7 @@ export default function App() {
       <LangToggle />
       {showResume ? (
         <div className="screen resume-splash">
-          <div className="logo">CASHFLOW</div>
+          <div className="logo">CA$HRICH</div>
           <div className="spinner" />
           <p>{t('game.reconnecting')}</p>
         </div>
