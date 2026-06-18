@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { RAT_GRID, ratCells, ratTileType, tileLabel } from '../lib/boardLayout';
+import { ratTileType, tileLabel } from '../lib/boardLayout';
 import type { PublicPlayer } from '../lib/types';
 
 interface Props {
@@ -8,58 +8,64 @@ interface Props {
   center: React.ReactNode;
 }
 
+const TILE_COUNT = 24;
+const RADIUS = 42; // % from center to tile centers
+
 export default function RatRaceBoard({ players, currentId, center }: Props) {
   const { i18n } = useTranslation();
   const lng = i18n.language?.startsWith('th') ? 'th' : 'en';
 
   const ratPlayers = players.filter((p) => p.phase === 'ratRace' && !p.isBankrupt);
-  const tokensByCell: Record<number, PublicPlayer[]> = {};
+  const tokensByPos: Record<number, PublicPlayer[]> = {};
   ratPlayers.forEach((p) => {
-    const cellIdx = p.position === 0 ? ratCells.length - 1 : p.position - 1;
-    (tokensByCell[cellIdx] ||= []).push(p);
+    const pos = p.position === 0 ? 24 : p.position;
+    (tokensByPos[pos] ||= []).push(p);
   });
 
   return (
-    <div
-      className="board rat-board"
-      style={{
-        gridTemplateColumns: `repeat(${RAT_GRID}, 1fr)`,
-        gridTemplateRows: `repeat(${RAT_GRID}, 1fr)`
-      }}
-    >
-      {ratCells.map((cell, idx) => {
-        const position = idx + 1; // 1..24
-        const type = position === 24 ? 'market' : ratTileType(position);
-        const label = tileLabel[type];
-        const tokens = tokensByCell[idx] || [];
-        const isStart = position === 24;
-        return (
-          <div
-            key={idx}
-            className={`tile tile-${type} ${isStart ? 'tile-start' : ''}`}
-            style={{ gridRow: cell.row, gridColumn: cell.col }}
-          >
-            <span className="tile-icon">{isStart ? '🏁' : label.icon}</span>
-            <span className="tile-name">{label[lng]}</span>
-            {tokens.length > 0 && (
-              <div className="tokens">
-                {tokens.map((p) => (
-                  <span
-                    key={p.id}
-                    className={`token ${p.id === currentId ? 'current' : ''}`}
-                    style={{ background: p.color }}
-                    title={p.username}
-                  >
-                    {p.username[0]?.toUpperCase()}
-                  </span>
-                ))}
-              </div>
-            )}
+    <div className="ring-wrap">
+      <div className="ring-board">
+        {Array.from({ length: TILE_COUNT }, (_, idx) => {
+          const position = idx + 1; // 1..24
+          const type = ratTileType(position);
+          const label = tileLabel[type];
+          const tokens = tokensByPos[position] || [];
+          const theta = (-90 + idx * (360 / TILE_COUNT)) * (Math.PI / 180);
+          const x = 50 + RADIUS * Math.cos(theta);
+          const y = 50 + RADIUS * Math.sin(theta);
+          const isCurrentTile = tokens.some((t) => t.id === currentId);
+          return (
+            <div
+              key={idx}
+              className={`ring-tile tile-${type} ${isCurrentTile ? 'on-current' : ''}`}
+              style={{ left: `${x}%`, top: `${y}%` }}
+            >
+              <span className="tile-icon">{label.icon}</span>
+              <span className="tile-name">{label[lng]}</span>
+              {tokens.length > 0 && (
+                <div className="tokens">
+                  {tokens.map((p) => (
+                    <span
+                      key={p.id}
+                      className={`token ${p.id === currentId ? 'current' : ''}`}
+                      style={{ background: p.color }}
+                      title={p.username}
+                    >
+                      {p.username[0]?.toUpperCase()}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+        <div className="ring-center">
+          <div className="ring-logo">
+            CA$HFLOW
+            <span className="ring-sub">หนีออกจากวงจรหนูถีบจักร</span>
           </div>
-        );
-      })}
-      <div className="board-center" style={{ gridRow: '2 / 7', gridColumn: '2 / 7' }}>
-        {center}
+          {center}
+        </div>
       </div>
     </div>
   );

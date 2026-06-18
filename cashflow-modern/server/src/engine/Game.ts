@@ -582,6 +582,40 @@ export class Game {
     if (this.logs.length > 100) this.logs.pop();
   }
 
+  // ---------- Persistence ----------
+
+  toState(): Record<string, unknown> {
+    return {
+      roomId: this.roomId,
+      status: this.status,
+      currentIndex: this.currentIndex,
+      diceValues: this.diceValues,
+      hasRolled: this.hasRolled,
+      resolved: this.resolved,
+      pendingCard: this.pendingCard,
+      awaitingDealChoice: this.awaitingDealChoice,
+      pendingFastTrackTile: this.pendingFastTrackTile,
+      logs: this.logs,
+      winnerId: this.winnerId,
+      players: this.players.map((p) => p.toState())
+    };
+  }
+
+  hydrate(s: any): void {
+    this.roomId = s.roomId ?? this.roomId;
+    this.status = s.status;
+    this.currentIndex = s.currentIndex ?? 0;
+    this.diceValues = s.diceValues ?? [];
+    this.hasRolled = !!s.hasRolled;
+    this.resolved = !!s.resolved;
+    this.pendingCard = s.pendingCard ?? null;
+    this.awaitingDealChoice = !!s.awaitingDealChoice;
+    this.pendingFastTrackTile = s.pendingFastTrackTile ?? null;
+    this.logs = s.logs ?? [];
+    this.winnerId = s.winnerId ?? null;
+    this.players = (s.players ?? []).map((p: any) => Player.fromState(p));
+  }
+
   getState(): PublicGameState {
     const awaitingDreamChoice = this.players
       .filter((p) => p.phase === 'fastTrack' && !p.dreamId && !p.isBankrupt)

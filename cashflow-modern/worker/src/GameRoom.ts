@@ -8,17 +8,36 @@ interface ClientMessage {
 }
 
 /**
- * One Durable Object instance == one game room. Holds the authoritative
- * Game and the set of connected WebSockets, and broadcasts state on change.
+ * One Durable Object instance == one game room. Holds the authoritative Game,
+ * the connected WebSockets, and persists state to DO storage so a refresh (or
+ * the DO being evicted) never loses the game. Players are keyed by a stable
+ * client-provided playerId, which lets a player reclaim their seat on reconnect.
  */
 export class GameRoom {
   private game: Game | null = null;
   private roomCode = '';
   private sockets = new Map<WebSocket, string>(); // ws -> playerId
+  private state: DurableObjectState;
+  private loaded: Promise<void>;
 
-  constructor(_state: DurableObjectState, _env: unknown) {}
+  constructor(state: DurableObjectState, _env: unknown) {
+    this.state = state;
+    this.loaded = state.blockConcurrencyWhile(async () => {
+      const saved = await state.storage.get<any>('game');
+      if (saved) {
+        this.roomCode = saved.roomId || '';
+        this.game = new Game(this.roomCode);
+        this.game.hydrate(saved);
+      }
+    });
+  }
+
+  private async save() {
+    if (this.game) await this.state.storage.put('game', this.game.toState());
+  }
 
   async fetch(request: Request): Promise<Response> {
+    await this.loaded;
     const url = new URL(request.url);
     const code = (url.searchParams.get('room') || '').toUpperCase();
     if (code) this.roomCode = code;
@@ -32,17 +51,12 @@ export class GameRoom {
     const server = pair[1];
     server.accept();
 
-    const playerId = crypto.randomUUID();
-    this.sockets.set(server, playerId);
-
     server.addEventListener('message', (evt) => this.onMessage(server, evt));
     server.addEventListener('close', () => this.onClose(server));
     server.addEventListener('error', () => this.onClose(server));
 
-    server.send(JSON.stringify({ event: 'welcome', id: playerId }));
-    if (this.game) {
-      server.send(JSON.stringify({ event: 'state', state: this.game.getState() }));
-    }
+    // Tell the client the socket is ready; the client then sends `join`.
+    server.send(JSON.stringify({ event: 'ready' }));
 
     return new Response(null, { status: 101, webSocket: client });
   }
@@ -70,10 +84,28 @@ export class GameRoom {
   private onClose(ws: WebSocket) {
     const playerId = this.sockets.get(ws);
     this.sockets.delete(ws);
-    if (this.game && playerId) {
-      this.game.removePlayer(playerId);
-      this.broadcast();
+    if (!playerId || !this.game) return;
+    // Another tab/socket may still represent this player.
+    const stillConnected = [...this.sockets.values()].includes(playerId);
+    if (stillConnected) return;
+    this.game.removePlayer(playerId); // lobby: remove; started: mark disconnected (seat kept)
+    this.broadcast();
+    void this.save();
+  }
+
+  private attach(ws: WebSocket, playerId: string) {
+    // Replace any previous socket for the same player (e.g. after refresh).
+    for (const [s, id] of this.sockets) {
+      if (id === playerId && s !== ws) {
+        this.sockets.delete(s);
+        try {
+          s.close();
+        } catch {
+          /* ignore */
+        }
+      }
     }
+    this.sockets.set(ws, playerId);
   }
 
   private onMessage(ws: WebSocket, evt: MessageEvent) {
@@ -83,40 +115,62 @@ export class GameRoom {
     } catch {
       return;
     }
-    const playerId = this.sockets.get(ws);
-    if (!playerId) return;
-
     const ack = (ok: boolean, extra: Record<string, unknown> = {}) =>
       this.send(ws, { reqId: msg.reqId, ok, ...extra });
-
     const p = msg.payload || {};
 
-    switch (msg.event) {
-      case 'createRoom': {
-        const name = String(p.username || '').trim();
-        if (!name) return ack(false, { error: 'name_required' });
-        if (!this.game) this.game = new Game(this.roomCode || 'ROOM');
-        const res = this.game.addPlayer(playerId, name);
-        ack(res.ok, { error: res.error, roomId: this.roomCode });
+    // ---- join / create / resume (establishes this socket's playerId) ----
+    if (msg.event === 'join') {
+      const playerId = String(p.playerId || '').trim();
+      const username = String(p.username || '').trim();
+      const intent: 'create' | 'join' | 'resume' = p.intent || 'join';
+      if (!playerId) return ack(false, { error: 'name_required' });
+
+      const existing = this.game?.players.find((pl) => pl.id === playerId);
+
+      if (intent === 'resume') {
+        if (!this.game || !existing) return ack(false, { error: 'room_not_found' });
+        this.game.setConnected(playerId, true);
+        this.attach(ws, playerId);
+        ack(true, { roomId: this.roomCode });
         this.broadcast();
+        void this.save();
         return;
       }
-      case 'joinRoom': {
-        const name = String(p.username || '').trim();
-        if (!this.game || this.game.players.length === 0) {
-          return ack(false, { error: 'room_not_found' });
-        }
-        const res = this.game.addPlayer(playerId, name);
-        ack(res.ok, { error: res.error, roomId: this.roomCode });
+
+      if (existing) {
+        // Same player reconnecting (or a duplicate tab) — reclaim the seat.
+        this.game!.setConnected(playerId, true);
+        this.attach(ws, playerId);
+        ack(true, { roomId: this.roomCode });
         this.broadcast();
+        void this.save();
         return;
       }
-      case 'leaveRoom': {
-        if (this.game) this.game.removePlayer(playerId);
-        ack(true);
-        this.broadcast();
-        return;
+
+      if (intent === 'join' && (!this.game || this.game.players.length === 0)) {
+        return ack(false, { error: 'room_not_found' });
       }
+
+      if (!this.game) this.game = new Game(this.roomCode || 'ROOM');
+      const res = this.game.addPlayer(playerId, username);
+      if (res.ok) this.attach(ws, playerId);
+      ack(res.ok, { error: res.error, roomId: this.roomCode });
+      this.broadcast();
+      void this.save();
+      return;
+    }
+
+    const playerId = this.sockets.get(ws);
+    if (!playerId) return ack(false, { error: 'not_joined' });
+
+    if (msg.event === 'leaveRoom') {
+      this.game?.removePlayer(playerId);
+      this.sockets.delete(ws);
+      ack(true);
+      this.broadcast();
+      void this.save();
+      return;
     }
 
     if (!this.game) return ack(false, { error: 'no_room' });
@@ -158,5 +212,6 @@ export class GameRoom {
 
     ack(res.ok, { error: res.error });
     this.broadcast();
+    void this.save();
   }
 }

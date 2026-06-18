@@ -414,4 +414,43 @@ export class Player {
       hasWon: this.hasWon
     };
   }
+
+  /** Full snapshot for persistence (includes private/runtime fields). */
+  toState(): Record<string, unknown> {
+    return {
+      id: this.id,
+      username: this.username,
+      color: this.color,
+      isHost: this.isHost,
+      connected: this.connected,
+      professionName: this.professionName,
+      income: this.income,
+      expenses: this.expenses,
+      assets: this.assets,
+      liabilities: this.liabilities,
+      babies: this.babies,
+      cash: this.cash,
+      ledger: this.ledger,
+      position: this.position,
+      lastPosition: this.lastPosition,
+      phase: this.phase,
+      fastTrackPosition: this.fastTrackPosition,
+      fastTrackIncome: this.fastTrackIncome,
+      fastTrackCashFlowGain: this.fastTrackCashFlowGain,
+      ownedInvestments: [...this.ownedInvestments],
+      dreamId: this.dreamId,
+      skippedTurns: this.skippedTurns,
+      extraDiceTurns: this.extraDiceTurns,
+      hasMlm: this.hasMlm,
+      isBankrupt: this.isBankrupt,
+      hasWon: this.hasWon
+    };
+  }
+
+  static fromState(s: any): Player {
+    const p: Player = Object.create(Player.prototype);
+    Object.assign(p, s);
+    p.ownedInvestments = new Set<string>(s.ownedInvestments || []);
+    return p;
+  }
 }

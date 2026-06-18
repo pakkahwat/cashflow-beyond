@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { leaveRoom } from '../lib/socket';
 import { useGame } from '../store/gameStore';
 import type { GameState } from '../lib/types';
+import Confetti from './Confetti';
 
 export default function WinnerOverlay({ state }: { state: GameState }) {
   const { t } = useTranslation();
@@ -15,7 +16,9 @@ export default function WinnerOverlay({ state }: { state: GameState }) {
 
   return (
     <div className="modal-backdrop win-backdrop">
+      {winner && <Confetti />}
       <div className="modal winner-modal">
+        <div className="trophy">🏆</div>
         <h2>{t('winner.title')}</h2>
         {winner ? (
           <p className="winner-name" style={{ color: winner.color }}>

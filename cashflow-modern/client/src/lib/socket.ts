@@ -1,6 +1,6 @@
 // Native WebSocket transport for the Cloudflare Worker + Durable Object backend.
-// Exposes a small Socket.IO-like surface: emit(event,payload) => Promise<ack>,
-// plus onState / onId callbacks and room helpers.
+// Uses a stable, client-owned playerId persisted in localStorage so a player
+// can reclaim their seat after a refresh (the game itself is saved in the DO).
 
 export interface Ack {
   ok: boolean;
@@ -8,16 +8,30 @@ export interface Ack {
   roomId?: string;
 }
 
-// In production the client is served by the same Worker (same origin).
-// In dev, set VITE_SERVER_URL=http://localhost:8787 (wrangler dev).
 const httpBase = import.meta.env.VITE_SERVER_URL || '';
 const wsBase = (httpBase || (typeof location !== 'undefined' ? location.origin : '')).replace(
   /^http/,
   'ws'
 );
 
+const LS = {
+  pid: 'cf_pid',
+  room: 'cf_room',
+  name: 'cf_name'
+};
+
+const uuid = (): string =>
+  (crypto as any).randomUUID?.() ?? Math.random().toString(36).slice(2) + Date.now().toString(36);
+
+const playerId: string = (() => {
+  const existing = localStorage.getItem(LS.pid);
+  if (existing) return existing;
+  const id = uuid();
+  localStorage.setItem(LS.pid, id);
+  return id;
+})();
+
 let ws: WebSocket | null = null;
-let myId = '';
 const pending = new Map<string, (a: Ack) => void>();
 let stateCb: (s: any) => void = () => {};
 let idCb: (id: string) => void = () => {};
@@ -27,14 +41,20 @@ export const onState = (cb: (s: any) => void) => {
 };
 export const onId = (cb: (id: string) => void) => {
   idCb = cb;
+  cb(playerId);
 };
-export const getMyId = () => myId;
+export const getMyId = () => playerId;
+export const savedRoom = () => localStorage.getItem(LS.room);
 
 const connect = (roomId: string): Promise<void> =>
   new Promise((resolve, reject) => {
     if (ws && ws.readyState === WebSocket.OPEN) return resolve();
     ws = new WebSocket(`${wsBase}/ws?room=${encodeURIComponent(roomId)}`);
     let opened = false;
+    ws.onopen = () => {
+      opened = true;
+      resolve();
+    };
     ws.onmessage = (e) => {
       let msg: any;
       try {
@@ -42,19 +62,8 @@ const connect = (roomId: string): Promise<void> =>
       } catch {
         return;
       }
-      if (msg.event === 'welcome') {
-        myId = msg.id;
-        idCb(myId);
-        if (!opened) {
-          opened = true;
-          resolve();
-        }
-        return;
-      }
-      if (msg.event === 'state') {
-        stateCb(msg.state);
-        return;
-      }
+      if (msg.event === 'ready') return;
+      if (msg.event === 'state') return stateCb(msg.state);
       if (msg.reqId && pending.has(msg.reqId)) {
         pending.get(msg.reqId)!(msg as Ack);
         pending.delete(msg.reqId);
@@ -63,9 +72,12 @@ const connect = (roomId: string): Promise<void> =>
     ws.onerror = () => {
       if (!opened) reject(new Error('ws_error'));
     };
+    ws.onclose = () => {
+      ws = null;
+    };
   });
 
-export const emit = (event: string, payload?: unknown): Promise<Ack> =>
+export const emit = (event: string, payload?: Record<string, unknown>): Promise<Ack> =>
   new Promise((resolve) => {
     if (!ws || ws.readyState !== WebSocket.OPEN) {
       return resolve({ ok: false, error: 'no_connection' });
@@ -81,11 +93,21 @@ export const emit = (event: string, payload?: unknown): Promise<Ack> =>
     }, 8000);
   });
 
+const remember = (roomId: string, name: string) => {
+  localStorage.setItem(LS.room, roomId);
+  localStorage.setItem(LS.name, name);
+};
+const forget = () => {
+  localStorage.removeItem(LS.room);
+};
+
 export const createRoom = async (username: string): Promise<Ack> => {
   const res = await fetch(`${httpBase}/api/room`, { method: 'POST' });
   const { roomId } = await res.json();
   await connect(roomId);
-  return emit('createRoom', { username });
+  const ack = await emit('join', { intent: 'create', playerId, username });
+  if (ack.ok) remember(ack.roomId || roomId, username);
+  return ack;
 };
 
 export const joinRoom = async (roomId: string, username: string): Promise<Ack> => {
@@ -94,11 +116,30 @@ export const joinRoom = async (roomId: string, username: string): Promise<Ack> =
   } catch {
     return { ok: false, error: 'room_not_found' };
   }
-  return emit('joinRoom', { username });
+  const ack = await emit('join', { intent: 'join', playerId, username });
+  if (ack.ok) remember(ack.roomId || roomId, username);
+  return ack;
+};
+
+/** Re-join a saved game after a refresh. Returns false if nothing to resume. */
+export const resume = async (): Promise<Ack | null> => {
+  const roomId = localStorage.getItem(LS.room);
+  const name = localStorage.getItem(LS.name) || 'Player';
+  if (!roomId) return null;
+  try {
+    await connect(roomId);
+  } catch {
+    forget();
+    return { ok: false, error: 'room_not_found' };
+  }
+  const ack = await emit('join', { intent: 'resume', playerId, username: name });
+  if (!ack.ok) forget();
+  return ack;
 };
 
 export const leaveRoom = async (): Promise<Ack> => {
   const ack = await emit('leaveRoom');
+  forget();
   ws?.close();
   ws = null;
   return ack;

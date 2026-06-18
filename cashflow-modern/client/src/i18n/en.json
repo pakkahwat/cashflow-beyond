@@ -44,7 +44,12 @@
     "confirm": "Confirm",
     "cancel": "Cancel",
     "waitingTurn": "Waiting for other players...",
-    "spectating": "You are spectating (out of the game)"
+    "spectating": "You are spectating (out of the game)",
+    "reconnecting": "Reconnecting to your game..."
+  },
+  "profession": {
+    "your": "Your profession is",
+    "start": "Start playing!"
   },
   "stats": {
     "cash": "Cash",

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { onState, onId, fetchBoard } from '../lib/socket';
+import { onState, onId, fetchBoard, resume, savedRoom } from '../lib/socket';
 import type { GameState, Dream, FastTrackTile } from '../lib/types';
 
 type Screen = 'home' | 'lobby' | 'game';
@@ -12,6 +12,7 @@ interface Store {
   dreams: Dream[];
   fastTrack: FastTrackTile[];
   error: string | null;
+  resuming: boolean;
   setScreen: (s: Screen) => void;
   setRoom: (id: string) => void;
   setError: (e: string | null) => void;
@@ -26,6 +27,7 @@ export const useGame = create<Store>((set) => ({
   dreams: [],
   fastTrack: [],
   error: null,
+  resuming: !!savedRoom(),
   setScreen: (screen) => set({ screen }),
   setRoom: (roomId) => set({ roomId }),
   setError: (error) => set({ error }),
@@ -37,11 +39,18 @@ onId((id) => useGame.setState({ myId: id }));
 onState((state: GameState) => {
   let next: Screen = 'lobby';
   if (state.status !== 'lobby') next = 'game';
-  useGame.setState({ state, screen: next, roomId: state.roomId });
+  useGame.setState({ state, screen: next, roomId: state.roomId, resuming: false });
 });
 
 fetchBoard()
   .then(({ dreams, fastTrack }) => useGame.setState({ dreams, fastTrack }))
   .catch(() => {});
+
+// Attempt to resume a saved game on load. On success, onState() flips the screen.
+resume()
+  .then((ack) => {
+    if (!ack || !ack.ok) useGame.setState({ resuming: false });
+  })
+  .catch(() => useGame.setState({ resuming: false }));
 
 export const myPlayer = (s: Store) => s.state?.players.find((p) => p.id === s.myId) ?? null;

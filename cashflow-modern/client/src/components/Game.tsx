@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { emit } from '../lib/socket';
 import { useGame, myPlayer } from '../store/gameStore';
@@ -9,6 +10,8 @@ import CardModal from './CardModal';
 import FastTrackModal from './FastTrackModal';
 import DreamPicker from './DreamPicker';
 import WinnerOverlay from './WinnerOverlay';
+import ProfessionCard from './ProfessionCard';
+import Dice3D from './Dice3D';
 import { money, signed } from '../lib/format';
 import { FAST_TRACK_GOAL } from '../lib/constants';
 
@@ -20,6 +23,11 @@ export default function Game() {
   const dreams = useGame((s) => s.dreams);
   const fastTrack = useGame((s) => s.fastTrack);
   const setError = useGame((s) => s.setError);
+
+  const [showProfession, setShowProfession] = useState(false);
+  useEffect(() => {
+    if (state?.status === 'started') setShowProfession(true);
+  }, [state?.status]);
 
   if (!state) return null;
 
@@ -41,25 +49,30 @@ export default function Game() {
     !state.pendingFastTrackTile &&
     !state.awaitingDealChoice &&
     !needRescue;
-
   const showDiceChoice = canRoll && me?.phase === 'ratRace' && (me?.extraDiceTurns ?? 0) > 0;
 
-  const center = (
+  // --- compact content shown inside the circular board center ---
+  const boardCenter = (
     <div className="center-stack">
       <div className="turn-banner" style={{ borderColor: current?.color }}>
         <span className="dot" style={{ background: current?.color }} />
         {isMyTurn ? t('game.yourTurn') : t('game.turnOf', { name: current?.username })}
       </div>
-
       <div className="dice-area">
-        {state.diceValues.map((v, i) => (
-          <div className="die" key={i}>
-            {'⚀⚁⚂⚃⚄⚅'[v - 1]}
-          </div>
+        {Array.from({ length: me?.phase === 'fastTrack' ? 2 : 1 }).map((_, i) => (
+          <Dice3D
+            key={i}
+            value={state.hasRolled ? state.diceValues[i] ?? null : null}
+            trigger={`${state.diceValues.join(',')}|${state.currentPlayerId}|${state.hasRolled}|${i}`}
+          />
         ))}
-        {state.diceValues.length === 0 && <div className="die empty">🎲</div>}
       </div>
+    </div>
+  );
 
+  // --- controls + status shown below the board ---
+  const controls = (
+    <div className="play-panel">
       {me && (
         <div className="status-mini">
           <div>
@@ -125,7 +138,11 @@ export default function Game() {
             </button>
           </>
         ) : (
-          <button className="btn primary big" disabled={!canRoll} onClick={() => send('rollDice', { diceCount: me?.phase === 'fastTrack' ? 2 : 1 })}>
+          <button
+            className="btn primary big"
+            disabled={!canRoll}
+            onClick={() => send('rollDice', { diceCount: me?.phase === 'fastTrack' ? 2 : 1 })}
+          >
             🎲 {t('game.roll')}
           </button>
         )}
@@ -153,6 +170,7 @@ export default function Game() {
           <span className="phase-pill">
             {me?.phase === 'fastTrack' ? `🚀 ${t('game.fastTrack')}` : `🐭 ${t('game.ratRace')}`}
           </span>
+          {me && <span className="prof-pill">{me.professionName}</span>}
           <span className="room-pill">{state.roomId}</span>
         </div>
         {me?.phase === 'fastTrack' ? (
@@ -161,11 +179,12 @@ export default function Game() {
             currentId={state.currentPlayerId}
             tiles={fastTrack}
             dreams={dreams}
-            center={center}
+            center={boardCenter}
           />
         ) : (
-          <RatRaceBoard players={state.players} currentId={state.currentPlayerId} center={center} />
+          <RatRaceBoard players={state.players} currentId={state.currentPlayerId} center={boardCenter} />
         )}
+        {controls}
       </div>
 
       <aside className="side-panel">
@@ -183,6 +202,9 @@ export default function Game() {
         </div>
       </aside>
 
+      {me && showProfession && state.status === 'started' && (
+        <ProfessionCard me={me} onClose={() => setShowProfession(false)} />
+      )}
       {needDream && <DreamPicker dreams={dreams} />}
       {!needDream && state.pendingCard && (
         <CardModal card={state.pendingCard} me={me} isMyTurn={isMyTurn} />
