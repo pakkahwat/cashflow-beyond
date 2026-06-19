@@ -152,6 +152,7 @@
   height: 100vh;
   overflow: hidden;
   background: var(--bg, #0b0f1d);
+  padding: 10px 16px 12px; /* reclaim the 58px top padding for board + summary */
 }
 .game-screen:fullscreen .board-area {
   min-height: 0;
@@ -161,27 +162,18 @@
   max-height: 100vh;
   overflow-y: auto;
 }
-/* Keep the financial summary visible in fullscreen as a compact floating bar
-   (it used to be hidden, which made cash / passive income / cashflow disappear). */
+/* Keep the financial summary visible in fullscreen. It stays in NORMAL FLOW
+   below the board (like windowed mode) so it never covers the Roll / End Turn
+   buttons, which overlay the board's own bottom. The board is shrunk so the
+   board + summary fit on one screen without scrolling. */
 .game-screen:fullscreen .play-panel {
-  position: fixed;
-  left: 50%;
-  bottom: 12px;
-  transform: translateX(-50%);
-  z-index: 30;
-  width: min(720px, 94vw);
-  margin: 0;
-  background: rgba(13, 18, 38, 0.85);
-  backdrop-filter: blur(6px);
-  border: 1px solid var(--line, #2a3556);
-  border-radius: 14px;
-  padding: 8px 14px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  margin: 10px auto 0;
+  flex: 0 0 auto;
 }
 .game-screen:fullscreen .board3d-wrap,
 .game-screen:fullscreen .board {
-  max-width: min(82vh, 96%);
-  max-height: calc(100vh - 150px);
+  max-width: min(76vh, 92%);
+  max-height: calc(100vh - 220px);
 }
 
 /* player name floating above a 3D token */
