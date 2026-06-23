@@ -32,6 +32,8 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# ...but the dev WS base is public (no secrets) and needed for the dev workflow
+!.env.development
 
 # vercel
 .vercel

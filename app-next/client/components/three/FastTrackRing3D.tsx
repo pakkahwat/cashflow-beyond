@@ -1,0 +1,115 @@
+import { useTranslation } from 'react-i18next';
+import { ringPositions, FT_TILE_COLOR, tokenSlotOffset } from '../../lib/boardLayout3d';
+import type { PublicPlayer, FastTrackTile, Dream } from '../../lib/types';
+import Tile3D from './Tile3D';
+import Token3D from './Token3D';
+import BoardBase from './BoardBase';
+
+export interface FastTrackRing3DProps {
+  players: PublicPlayer[];
+  currentId: string | null;
+  tiles: FastTrackTile[];
+  dreams: Dream[];
+  quality: 'high' | 'low';
+  reducedMotion: boolean;
+}
+
+const FT_RADIUS = 7.6;
+
+const KIND_ICON: Record<FastTrackTile['kind'], string> = {
+  cashflowDay: '💰',
+  investment: '🏢',
+  dream: '⭐',
+  charity: '❤️',
+  loss: '⚠️',
+  doodad: '🛍️'
+};
+
+export default function FastTrackRing3D({
+  players,
+  currentId,
+  tiles,
+  dreams,
+  quality,
+  reducedMotion
+}: FastTrackRing3DProps) {
+  const { i18n } = useTranslation();
+  const lng = i18n.language?.startsWith('th') ? 'th' : 'en';
+  const ring = ringPositions(tiles.length || 32, FT_RADIUS);
+
+  const ftPlayers = players.filter((p) => p.phase === 'fastTrack' && !p.isBankrupt);
+  const tokensByCell: Record<number, PublicPlayer[]> = {};
+  ftPlayers.forEach((p) => {
+    (tokensByCell[p.fastTrackPosition] ||= []).push(p);
+  });
+
+  const dreamName = (id?: string) => {
+    const d = dreams.find((x) => x.id === id);
+    return d ? (lng === 'th' ? d.nameTh : d.name) : '⭐';
+  };
+
+  const tileLabelFor = (tile: FastTrackTile): string => {
+    switch (tile.kind) {
+      case 'dream':
+        return dreamName(tile.id);
+      case 'investment':
+      case 'loss':
+        return (lng === 'th' ? tile.nameTh || tile.name : tile.name) ?? '';
+      case 'cashflowDay':
+        return lng === 'th' ? 'วันรับเงิน' : 'Cashflow';
+      case 'charity':
+        return lng === 'th' ? 'การกุศล' : 'Charity';
+      default:
+        return '';
+    }
+  };
+
+  return (
+    <group>
+      <BoardBase radius={FT_RADIUS} quality={quality} />
+
+      {ring.map((pt, idx) => {
+        const tile = tiles[idx];
+        if (!tile) return null;
+        const tokens = tokensByCell[idx] || [];
+        const isActiveTile = tokens.some((tk) => tk.id === currentId);
+        const rotationY = -pt.angle + Math.PI / 2;
+        return (
+          <Tile3D
+            key={idx}
+            position={[pt.x, 0.18, pt.z]}
+            rotationY={rotationY}
+            color={FT_TILE_COLOR[tile.kind]}
+            icon={tile.kind}
+            label={tileLabelFor(tile)}
+            active={isActiveTile}
+            quality={quality}
+          />
+        );
+      })}
+
+      {/* Flat, id-keyed token list so each token's instance survives tile changes
+          and Token3D can animate the walk (see RatRaceRing3D for the rationale). */}
+      {ftPlayers.map((p) => {
+        const mates = tokensByCell[p.fastTrackPosition] || [p];
+        const slot = Math.max(0, mates.findIndex((m) => m.id === p.id));
+        const { dx, dz } = tokenSlotOffset(slot, mates.length, 0.45);
+        return (
+          <Token3D
+            key={p.id}
+            targetIndex={p.fastTrackPosition}
+            count={tiles.length || 32}
+            radius={FT_RADIUS}
+            dx={dx}
+            dz={dz}
+            color={p.color}
+            current={p.id === currentId}
+            reducedMotion={reducedMotion}
+            name={p.username}
+            variant={players.findIndex((pp) => pp.id === p.id) % 6}
+          />
+        );
+      })}
+    </group>
+  );
+}
