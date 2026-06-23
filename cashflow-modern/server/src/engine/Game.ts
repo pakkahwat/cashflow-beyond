@@ -1,7 +1,7 @@
 import professionsData from '../data/professions.json';
 import { Player } from './Player.js';
 import { Decks } from './decks.js';
-import { RAT_RACE_SIZE, ratRaceTileType, tilesCrossed } from './board.js';
+import { RAT_RACE_SIZE, ratRaceTileTypeFor, tilesCrossed } from './board.js';
 import {
   DREAMS,
   FAST_TRACK_BOARD,
@@ -38,10 +38,13 @@ export interface ActionResult {
 const ok = (): ActionResult => ({ ok: true });
 const fail = (error: string): ActionResult => ({ ok: false, error });
 
+export type Difficulty = 'normal' | 'easy';
+
 export class Game {
   roomId: string;
   status: GamePhaseStatus = 'lobby';
   players: Player[] = [];
+  difficulty: Difficulty = 'normal';
   private decks = new Decks();
 
   private currentIndex = 0;
@@ -51,7 +54,7 @@ export class Game {
   private pendingCard: Card | null = null;
   private awaitingDealChoice = false;
   private pendingFastTrackTile: ReturnType<() => (typeof FAST_TRACK_BOARD)[number]> | null = null;
-  private logs: { ts: number; player: string; color: string; message: string }[] = [];
+  private logs: { ts: number; player: string; color: string; code: string; params: Record<string, unknown> }[] = [];
   private winnerId: string | null = null;
   private dreamMarkers: Record<string, number> = {};
 
@@ -108,23 +111,33 @@ export class Game {
 
   // ---------- Start ----------
 
+  setDifficulty(byId: string, difficulty: 'normal' | 'easy'): ActionResult {
+    if (this.status !== 'lobby') return fail('game_already_started');
+    const host = this.host;
+    if (!host || host.id !== byId) return fail('only_host_can_start');
+    this.difficulty = difficulty;
+    return ok();
+  }
+
   start(byId: string): ActionResult {
     const host = this.host;
     if (!host || host.id !== byId) return fail('only_host_can_start');
     if (this.players.length < 2) return fail('need_players');
     // assign unique professions + colors fresh
     const profs = shuffle(PROFESSIONS).slice(0, this.players.length);
+    const months = this.difficulty === 'easy' ? 2 : 1;
     this.players.forEach((p, i) => {
       const fresh = new Player(p.id, p.username, COLORS[i % COLORS.length], p.isHost, profs[i]);
       // Official setup: distribute one Monthly Cash Flow + Savings, then erase Savings.
-      fresh.cash = fresh.cashFlow + fresh.assets.savings;
+      // Easy mode front-loads an extra month so thin bankrolls can survive bad luck.
+      fresh.cash = fresh.cashFlow * months + fresh.assets.savings;
       fresh.assets.savings = 0;
       this.players[i] = fresh;
     });
     this.status = 'started';
     this.currentIndex = Math.floor(Math.random() * this.players.length); // highest-roll-goes-first ≈ random
     this.beginTurn();
-    this.log(this.currentPlayer, 'started the game');
+    this.log(this.currentPlayer, 'started');
     return ok();
   }
 
@@ -153,7 +166,7 @@ export class Game {
     }
     if (p.skippedTurns > 0) {
       p.skippedTurns -= 1;
-      this.log(p, 'skipped a turn');
+      this.log(p, 'skippedTurn');
       this.advanceTurn();
     }
   }
@@ -200,7 +213,7 @@ export class Game {
     this.diceValues = Array.from({ length: count }, rollDie);
     const steps = this.diceValues.reduce((s, v) => s + v, 0);
     this.hasRolled = true;
-    this.log(p, `rolled ${this.diceValues.join(' + ')} = ${steps}`);
+    this.log(p, 'rolled', { dice: this.diceValues, total: steps });
 
     if (p.extraDiceTurns > 0) p.extraDiceTurns -= 1;
 
@@ -221,44 +234,49 @@ export class Game {
 
     // Pay payday for every payday tile crossed (including a landing).
     tilesCrossed(from, p.position, steps).forEach((pos) => {
-      if (ratRaceTileType(pos) === 'payday') {
+      if (ratRaceTileTypeFor(pos, this.difficulty) === 'payday') {
         const amount = p.payday();
-        this.log(p, `received payday $${amount.toLocaleString()}`);
+        this.log(p, 'payday', { amount });
       }
     });
 
-    const tile = ratRaceTileType(p.position);
+    const tile = ratRaceTileTypeFor(p.position, this.difficulty);
     switch (tile) {
       case 'payday':
         this.resolved = true;
         break;
       case 'deal':
         this.awaitingDealChoice = true;
-        this.log(p, 'landed on a Deal — choose Small or Big');
+        this.log(p, 'dealLanded');
         break;
       case 'market':
         this.pendingCard = this.decks.draw('market');
-        this.log(p, `Market: ${this.pendingCard.heading ?? ''}`);
+        this.log(p, 'market', { heading: this.pendingCard.heading ?? '' });
         this.autoResolveMarket();
         break;
       case 'doodad': {
         const card = this.decks.draw('doodad');
         this.pendingCard = card;
-        const result = p.doodad(card);
-        if (result === 'skip') this.log(p, `dodged a Doodad: ${card.heading}`);
-        else this.log(p, `paid Doodad $${(card.cost ?? 0).toLocaleString()}: ${card.heading}`);
+        const result = p.doodad(card, this.difficulty);
+        if (result === 'skip') this.log(p, 'doodadDodged', { heading: card.heading });
+        else if (result === 'ok') {
+          this.log(p, 'doodadPaid', { cost: card.cost ?? 0, heading: card.heading });
+        } else {
+          this.log(p, 'doodadCapped', { paid: result.paid, cost: card.cost ?? 0, heading: card.heading });
+        }
         this.pendingCard = null;
         this.resolved = true;
         break;
       }
       case 'charity':
         this.pendingCard = this.decks.draw('charity');
-        this.log(p, 'landed on Charity');
+        this.log(p, 'charityLanded');
         break;
       case 'downsized': {
         this.pendingCard = this.decks.draw('downsized');
-        const amount = p.downsized();
-        this.log(p, `Downsized! paid $${amount.toLocaleString()} and lose 2 turns`);
+        const amount = p.downsized(this.difficulty);
+        const turns = this.difficulty === 'easy' ? 1 : 2;
+        this.log(p, 'downsized', { amount, turns });
         this.pendingCard = null;
         this.resolved = true;
         break;
@@ -266,7 +284,7 @@ export class Game {
       case 'baby': {
         this.pendingCard = this.decks.draw('baby');
         const added = p.baby();
-        this.log(p, added ? 'had a new baby 👶' : 'already has 3 babies');
+        this.log(p, 'baby', { added });
         this.pendingCard = null;
         this.resolved = true;
         break;
@@ -284,14 +302,14 @@ export class Game {
     if (card.type === 'damage') {
       const res = p.payDamages(card);
       if (res === 'noRealEstate') {
-        this.log(p, 'has no real estate — damage ignored');
+        this.log(p, 'damageIgnored');
       } else if (res === 'paid') {
-        this.log(p, `paid damages $${(card.cost ?? 0).toLocaleString()}`);
+        this.log(p, 'damagePaid', { cost: card.cost ?? 0 });
       } else {
         // Mandatory damage the player cannot afford: force the debit and let
         // needsRescue() require them to resolve the debt before ending the turn.
         p.forcePay(card.cost ?? 0, card.heading ?? 'Property damage');
-        this.log(p, `damages $${(card.cost ?? 0).toLocaleString()} exceed cash — must resolve debt`);
+        this.log(p, 'damageExceeds', { cost: card.cost ?? 0 });
       }
       this.pendingCard = null;
       this.resolved = true;
@@ -310,7 +328,7 @@ export class Game {
     const deck: DeckName = size === 'small' ? 'smallDeal' : 'bigDeal';
     this.pendingCard = this.decks.draw(deck);
     this.awaitingDealChoice = false;
-    this.log(this.currentPlayer, `drew a ${size === 'small' ? 'Small' : 'Big'} Deal: ${this.pendingCard.heading ?? ''}`);
+    this.log(this.currentPlayer, 'drewDeal', { size, heading: this.pendingCard.heading ?? '' });
     return ok();
   }
 
@@ -320,17 +338,37 @@ export class Game {
     const card = this.pendingCard;
     if (!card) return fail('no_pending_card');
 
-    // A pending stock card is a market event for EVERYONE: any player holding that
-    // symbol may sell at the drawn price even when it isn't their turn. Only the
-    // current player may buy or otherwise resolve the card (and end the turn).
+    // A pending market sale card (stock/gold/RE) is an event for EVERYONE who holds
+    // the matching asset: they may sell at the drawn price even out of turn (M6).
+    // Only the current player may buy, skip, or otherwise resolve the card.
+    // (applicableToEveryOne cards like damages remain drawer-only per their data.)
     if (!this.isCurrent(id)) {
-      if (action === 'sellStocks' && card.type === 'stock') {
+      if (
+        (action === 'sellStocks' && card.type === 'stock') ||
+        (action === 'sellGold' && card.type === 'goldCoins') ||
+        (action === 'sellRealEstate' && (card.value !== undefined || !!card.plus)) ||
+        !!card.applicableToEveryOne
+      ) {
         const seller = this.players.find((pl) => pl.id === id);
         if (!seller || seller.isBankrupt) return fail('no_player');
-        const count = Number(payload.count) || 0;
-        if (!seller.sellStocks(card, count)) return fail('cannot_sell');
-        this.log(seller, `sold ${count} ${card.symbol} @ $${card.price}`);
-        return ok();
+        if (action === 'sellStocks') {
+          const count = Number(payload.count) || 0;
+          if (!seller.sellStocks(card, count)) return fail('cannot_sell');
+          this.log(seller, 'soldStock', { symbol: card.symbol, count, price: card.price });
+          return ok();
+        }
+        if (action === 'sellGold') {
+          const count = Number(payload.count) || 0;
+          if (!seller.sellGold(card, count)) return fail('cannot_sell');
+          this.log(seller, 'soldGold', { count });
+          return ok();
+        }
+        if (action === 'sellRealEstate') {
+          const assetId = String(payload.assetId);
+          if (!seller.sellRealEstate(card, assetId)) return fail('cannot_sell');
+          this.log(seller, 'soldRE');
+          return ok();
+        }
       }
       return fail('not_your_turn');
     }
@@ -339,7 +377,7 @@ export class Game {
 
     switch (action) {
       case 'skip':
-        this.log(p, `passed on ${card.heading ?? card.type}`);
+        this.log(p, 'passed', { heading: card.heading ?? card.type });
         this.pendingCard = null;
         this.resolved = true;
         return ok();
@@ -347,7 +385,7 @@ export class Game {
       case 'donate': {
         if (card.type !== 'charity') return fail('not_charity');
         if (!p.charity()) return fail('insufficient_cash');
-        this.log(p, 'donated to charity — may roll 1 or 2 dice for 3 turns');
+        this.log(p, 'donated');
         this.pendingCard = null;
         this.resolved = true;
         return ok();
@@ -356,7 +394,7 @@ export class Game {
       case 'buyRealEstate': {
         if (card.type !== 'realEstate') return fail('not_real_estate');
         if (!p.buyRealEstate(card)) return fail('insufficient_cash');
-        this.log(p, `bought ${card.symbol} (+$${(card.cashFlow ?? 0).toLocaleString()}/mo)`);
+        this.log(p, 'boughtRE', { symbol: card.symbol, cashFlow: card.cashFlow ?? 0 });
         this.pendingCard = null;
         this.resolved = true;
         /* Fast Track entry is a player choice now (M5) */
@@ -366,7 +404,7 @@ export class Game {
       case 'buyBusiness': {
         if (card.type !== 'business') return fail('not_business');
         if (!p.buyBusiness(card)) return fail('insufficient_cash');
-        this.log(p, `bought business ${card.symbol} (+$${(card.cashFlow ?? 0).toLocaleString()}/mo)`);
+        this.log(p, 'boughtBiz', { symbol: card.symbol, cashFlow: card.cashFlow ?? 0 });
         this.pendingCard = null;
         this.resolved = true;
         /* Fast Track entry is a player choice now (M5) */
@@ -377,7 +415,7 @@ export class Game {
         if (card.type !== 'stock') return fail('not_stock');
         const count = Number(payload.count) || 0;
         if (!p.buyStocks(card, count)) return fail('insufficient_cash');
-        this.log(p, `bought ${count} ${card.symbol} @ $${card.price}`);
+        this.log(p, 'boughtStock', { symbol: card.symbol, count, price: card.price });
         this.pendingCard = null;
         this.resolved = true;
         return ok();
@@ -387,7 +425,7 @@ export class Game {
         if (card.type !== 'stock') return fail('not_stock');
         const count = Number(payload.count) || 0;
         if (!p.sellStocks(card, count)) return fail('cannot_sell');
-        this.log(p, `sold ${count} ${card.symbol} @ $${card.price}`);
+        this.log(p, 'soldStock', { symbol: card.symbol, count, price: card.price });
         this.pendingCard = null;
         this.resolved = true;
         return ok();
@@ -396,7 +434,7 @@ export class Game {
       case 'buyGold': {
         if (card.type !== 'goldCoins') return fail('not_gold');
         if (!p.buyGoldCoins(card)) return fail('insufficient_cash');
-        this.log(p, `bought ${card.count} gold coins`);
+        this.log(p, 'boughtGold', { count: card.count });
         this.pendingCard = null;
         this.resolved = true;
         return ok();
@@ -405,15 +443,19 @@ export class Game {
       case 'sellGold': {
         const count = Number(payload.count) || 0;
         if (!p.sellGold(card, count)) return fail('cannot_sell');
-        this.log(p, `sold ${count} gold coins`);
+        this.log(p, 'soldGold', { count });
         this.pendingCard = null;
         this.resolved = true;
         return ok();
       }
 
       case 'sellRealEstate': {
+        // Market-only: a card is a market sale offer when it carries a sale
+        // price (value or plus flag). Deal cards have neither, so they cannot
+        // be used to "sell" an asset.
+        if (card.value === undefined && !card.plus) return fail('not_market_card');
         if (!p.sellRealEstate(card, String(payload.assetId))) return fail('cannot_sell');
-        this.log(p, `sold real estate at market`);
+        this.log(p, 'soldRE');
         this.pendingCard = null;
         this.resolved = true;
         /* Fast Track entry is a player choice now (M5) */
@@ -423,7 +465,7 @@ export class Game {
       case 'buyMlm': {
         if (card.type !== 'mlm') return fail('not_mlm');
         if (!p.buyMlm(card)) return fail('insufficient_cash');
-        this.log(p, `joined ${card.symbol}`);
+        this.log(p, 'joinedMlm', { symbol: card.symbol });
         this.pendingCard = null;
         this.resolved = true;
         return ok();
@@ -448,7 +490,7 @@ export class Game {
       const win = (card.success ?? []).includes(die);
       const payout = win ? card.outcome?.success ?? 0 : card.outcome?.failure ?? 0;
       if (payout > 0) p.forcePay(-payout, 'Lottery payout');
-      this.log(p, `rolled ${die} on lottery — ${win ? `won $${payout.toLocaleString()}` : 'lost'}`);
+      this.log(p, 'lotteryMoney', { die, win, payout });
     } else {
       // stock split / reverse-split for everyone holding the symbol
       const die = rollDie();
@@ -457,7 +499,7 @@ export class Game {
         const stock = pl.assets.stocks.find((s) => s.symbol === card.symbol);
         if (stock) stock.count = up ? stock.count * 2 : Math.ceil(stock.count / 2);
       });
-      this.log(p, `${card.symbol} ${up ? 'split (×2)' : 'reverse split (÷2)'} on roll ${die}`);
+      this.log(p, 'lotterySplit', { symbol: card.symbol, up, die });
     }
     this.pendingCard = null;
     this.resolved = true;
@@ -472,7 +514,7 @@ export class Game {
     if (p.phase === 'fastTrack') return fail('no_loans_on_fast_track');
     if (p.isBankrupt) return fail('bankrupt');
     if (!p.takeLoan(amount)) return fail('invalid_amount');
-    this.log(p, `took a bank loan of $${amount.toLocaleString()}`);
+    this.log(p, 'loanTaken', { amount });
     return ok();
   }
 
@@ -480,7 +522,7 @@ export class Game {
     if (!this.isCurrent(id)) return fail('not_your_turn');
     const p = this.currentPlayer;
     if (!p.payLoan(amount, type)) return fail('cannot_pay');
-    this.log(p, `paid down ${String(type)} by $${amount.toLocaleString()}`);
+    this.log(p, 'loanPaid', { type: String(type), amount });
     return ok();
   }
 
@@ -488,7 +530,7 @@ export class Game {
     if (!this.isCurrent(id)) return fail('not_your_turn');
     const p = this.currentPlayer;
     p.liquidateEverything();
-    this.log(p, p.isBankrupt ? 'went bankrupt 💀' : 'liquidated assets to cover debt');
+    this.log(p, p.isBankrupt ? 'bankrupt' : 'liquidated');
     if (p.isBankrupt) {
       this.resolved = true;
       this.advanceTurn();
@@ -508,7 +550,7 @@ export class Game {
     if (!p.canExitRatRace()) return fail('not_eligible');
     if (p.needsRescue()) return fail('must_resolve_debt');
     p.enterFastTrack();
-    this.log(p, '🎉 chose to escape the Rat Race and enter the Fast Track!');
+    this.log(p, 'enteredFT');
     return ok();
   }
 
@@ -521,7 +563,7 @@ export class Game {
     if (!DREAMS.some((d) => d.id === dreamId)) return fail('invalid_dream');
     p.dreamId = dreamId;
     const dream = DREAMS.find((d) => d.id === dreamId)!;
-    this.log(p, `chose the dream: ${dream.name}`);
+    this.log(p, 'choseDream', { name: dream.name });
     return ok();
   }
 
@@ -533,32 +575,32 @@ export class Game {
     switch (tile.kind) {
       case 'cashflowDay': {
         const amount = p.fastTrackPayday();
-        this.log(p, `Fast Track cashflow day: +$${amount.toLocaleString()}`);
+        this.log(p, 'ftPayday', { amount });
         this.resolved = true;
         break;
       }
       case 'charity': {
         p.ftCharityDice = true; // permanent: may roll 1/2/3 dice, no cost
-        this.log(p, 'donated to charity — may now roll 1, 2, or 3 dice on the Fast Track');
+        this.log(p, 'ftCharity');
         this.resolved = true;
         break;
       }
       case 'loss': {
         const paid = p.payFastTrackLoss(tile.amount ?? 0, !!tile.half, tile.name ?? 'Loss', !!tile.full);
-        this.log(p, `${tile.name} — paid $${paid.toLocaleString()}`);
+        this.log(p, 'ftLoss', { name: tile.name ?? 'Loss', paid });
         this.resolved = true;
         break;
       }
       case 'investment':
         this.pendingFastTrackTile = tile;
-        this.log(p, `Investment: ${tile.name} — $${(tile.cost ?? 0).toLocaleString()} for +$${(tile.cashFlow ?? 0).toLocaleString()}/mo`);
+        this.log(p, 'ftInvestment', { name: tile.name ?? '', cost: tile.cost ?? 0, cashFlow: tile.cashFlow ?? 0 });
         this.resolved = false;
         break;
       case 'dream':
         // Landing on someone else's Dream raises its cost to the owner by 100%/marker (M4).
         if (tile.id && p.dreamId !== tile.id) {
           this.dreamMarkers[tile.id] = (this.dreamMarkers[tile.id] ?? 0) + 1;
-          this.log(p, `landed on another player's dream — its price rises`);
+          this.log(p, 'ftDreamMarker');
         }
         this.pendingFastTrackTile = tile;
         this.resolved = false;
@@ -576,7 +618,7 @@ export class Game {
     const p = this.currentPlayer;
 
     if (action === 'skip') {
-      this.log(p, `passed on ${tile.name ?? tile.kind}`);
+      this.log(p, 'ftPassed', { name: tile.name ?? tile.kind });
       this.pendingFastTrackTile = null;
       this.resolved = true;
       return ok();
@@ -584,10 +626,11 @@ export class Game {
 
     if (tile.kind === 'investment') {
       if (p.ownedInvestments.has(tile.id ?? '')) return fail('already_owned');
-      if (!p.buyFastTrackInvestment(tile.cost ?? 0, tile.cashFlow ?? 0, tile.name ?? 'investment', tile.id ?? '')) {
+      const investCost = tile.downPayment ?? tile.cost ?? 0;
+      if (!p.buyFastTrackInvestment(tile.cost ?? 0, tile.cashFlow ?? 0, tile.name ?? 'investment', tile.id ?? '', tile.downPayment)) {
         return fail('insufficient_cash');
       }
-      this.log(p, `invested in ${tile.name} (+$${(tile.cashFlow ?? 0).toLocaleString()}/mo cashflow)`);
+      this.log(p, 'ftInvested', { name: tile.name ?? 'investment', cashFlow: tile.cashFlow ?? 0, paid: investCost });
       this.pendingFastTrackTile = null;
       this.resolved = true;
       this.checkFastTrackWin();
@@ -622,17 +665,18 @@ export class Game {
     p.hasWon = true;
     this.winnerId = p.id;
     this.status = 'finished';
-    this.log(p, `🏆 WON the game — ${reason}`);
+    this.log(p, 'won', { reason });
   }
 
   // ---------- Logging / state ----------
 
-  private log(p: Player | undefined, message: string): void {
+  private log(p: Player | undefined, code: string, params: Record<string, unknown> = {}): void {
     this.logs.unshift({
       ts: Date.now(),
       player: p?.username ?? 'system',
       color: p?.color ?? '#888',
-      message
+      code,
+      params
     });
     if (this.logs.length > 100) this.logs.pop();
   }
@@ -643,6 +687,7 @@ export class Game {
     return {
       roomId: this.roomId,
       status: this.status,
+      difficulty: this.difficulty,
       currentIndex: this.currentIndex,
       diceValues: this.diceValues,
       hasRolled: this.hasRolled,
@@ -660,6 +705,7 @@ export class Game {
   hydrate(s: any): void {
     this.roomId = s.roomId ?? this.roomId;
     this.status = s.status;
+    this.difficulty = s.difficulty === 'easy' ? 'easy' : 'normal';
     this.currentIndex = s.currentIndex ?? 0;
     this.diceValues = s.diceValues ?? [];
     this.hasRolled = !!s.hasRolled;
@@ -692,6 +738,7 @@ export class Game {
     return {
       roomId: this.roomId,
       status: this.status,
+      difficulty: this.difficulty,
       players: this.players.map((p) => p.toPublic()),
       currentPlayerId: this.players.length ? this.currentPlayer.id : null,
       diceValues: this.diceValues,

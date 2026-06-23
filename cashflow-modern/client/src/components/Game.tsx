@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState, Suspense } from 'react';
 import { useTranslation } from 'react-i18next';
 import { emit, leaveRoom } from '../lib/socket';
+import { formatLog } from '../lib/logFormat';
 import { useGame, myPlayer } from '../store/gameStore';
 import RatRaceBoard from './RatRaceBoard';
 import FastTrackBoard from './FastTrackBoard';
-import Board3D from './three/Board3D';
+
+const LazyBoard3D = React.lazy(() => import('./three/Board3D'));
 import StatementPanel from './StatementPanel';
 import LoanPanel from './LoanPanel';
 import CardModal from './CardModal';
@@ -33,7 +35,8 @@ const BENIGN_ERRORS = new Set([
 ]);
 
 export default function Game() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const lng = i18n.language?.startsWith('th') ? 'th' : 'en';
   const state = useGame((s) => s.state);
   const myId = useGame((s) => s.myId);
   const me = useGame(myPlayer);
@@ -110,8 +113,8 @@ export default function Game() {
     }
     if (logs[0].ts <= lastLogTs.current) return;
     lastLogTs.current = logs[0].ts;
-    setEventToast(`${logs[0].player} ${logs[0].message}`);
-  }, [state?.logs]);
+    setEventToast(`${logs[0].player} ${formatLog(logs[0], lng)}`);
+  }, [state?.logs, lng]);
   useEffect(() => {
     if (!eventToast) return;
     const id = setTimeout(() => setEventToast(null), 2800);
@@ -390,13 +393,15 @@ export default function Game() {
         </div>
         {use3d ? (
           <div className="board3d-wrap">
-            <Board3D
-              state={state}
-              myId={myId}
-              dreams={dreams}
-              fastTrack={fastTrack}
-              quality={quality}
-            />
+            <Suspense fallback={<div className="board3d-loading">Loading 3D...</div>}>
+              <LazyBoard3D
+                state={state}
+                myId={myId}
+                dreams={dreams}
+                fastTrack={fastTrack}
+                quality={quality}
+              />
+            </Suspense>
             <div className="board3d-banner">{turnBanner}</div>
             <div className="board3d-actions">{actionBar}</div>
           </div>
@@ -409,7 +414,7 @@ export default function Game() {
             center={boardCenter}
           />
         ) : (
-          <RatRaceBoard players={state.players} currentId={state.currentPlayerId} center={boardCenter} />
+          <RatRaceBoard players={state.players} currentId={state.currentPlayerId} center={boardCenter} difficulty={state.difficulty} />
         )}
         {!use3d && actionBar}
         {statusPanel}
@@ -423,7 +428,7 @@ export default function Game() {
           <div className="logs">
             {state.logs.map((l, i) => (
               <div className="log-row" key={i}>
-                <b style={{ color: l.color }}>{l.player}</b> {l.message}
+                <b style={{ color: l.color }}>{l.player}</b> {formatLog(l, lng)}
               </div>
             ))}
           </div>

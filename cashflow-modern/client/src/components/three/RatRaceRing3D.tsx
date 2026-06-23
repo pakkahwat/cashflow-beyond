@@ -11,6 +11,7 @@ export interface RatRaceRing3DProps {
   currentId: string | null;
   quality: 'high' | 'low';
   reducedMotion: boolean;
+  difficulty?: 'normal' | 'easy';
 }
 
 const TILE_COUNT = 24;
@@ -20,7 +21,8 @@ export default function RatRaceRing3D({
   players,
   currentId,
   quality,
-  reducedMotion
+  reducedMotion,
+  difficulty = 'normal'
 }: RatRaceRing3DProps) {
   const { i18n } = useTranslation();
   const lng = i18n.language?.startsWith('th') ? 'th' : 'en';
@@ -39,7 +41,7 @@ export default function RatRaceRing3D({
 
       {ring.map((pt, idx) => {
         const position = idx + 1; // 1..24
-        const type = ratTileType(position);
+        const type = ratTileType(position, difficulty);
         const label = tileLabel[type];
         const tokens = tokensByPos[position] || [];
         const isActiveTile = tokens.some((tk) => tk.id === currentId);

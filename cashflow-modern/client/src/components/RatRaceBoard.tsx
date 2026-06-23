@@ -6,6 +6,7 @@ interface Props {
   players: PublicPlayer[];
   currentId: string | null;
   center: React.ReactNode;
+  difficulty?: 'normal' | 'easy';
 }
 
 const TILE_COUNT = 24;
@@ -37,7 +38,7 @@ const sector = (ri: number, ro: number, a0: number, a1: number) => {
   return `M ${x0o} ${y0o} A ${ro} ${ro} 0 0 1 ${x1o} ${y1o} L ${x1i} ${y1i} A ${ri} ${ri} 0 0 0 ${x0i} ${y0i} Z`;
 };
 
-export default function RatRaceBoard({ players, currentId, center }: Props) {
+export default function RatRaceBoard({ players, currentId, center, difficulty = 'normal' }: Props) {
   const { i18n } = useTranslation();
   const lng = i18n.language?.startsWith('th') ? 'th' : 'en';
 
@@ -53,7 +54,7 @@ export default function RatRaceBoard({ players, currentId, center }: Props) {
   const tiles = Array.from({ length: TILE_COUNT }, (_, idx) => {
     const position = idx + 1; // 1..24
     const center = -90 + idx * step; // degrees
-    return { idx, position, type: ratTileType(position), a0: center - step / 2, a1: center + step / 2, mid: center };
+    return { idx, position, type: ratTileType(position, difficulty), a0: center - step / 2, a1: center + step / 2, mid: center };
   });
 
   return (

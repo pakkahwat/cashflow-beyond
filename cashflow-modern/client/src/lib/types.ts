@@ -1,4 +1,5 @@
 // Mirrors the server's serialized state (server/src/engine/types.ts).
+import type { LogEntry } from './logFormat';
 
 export interface Card {
   id: string;
@@ -32,6 +33,7 @@ export interface FastTrackTile {
   name?: string;
   nameTh?: string;
   cost?: number;
+  downPayment?: number; // L7: pay down payment instead of full cost
   cashFlow?: number;
   amount?: number;
   half?: boolean;
@@ -110,6 +112,7 @@ export interface PublicPlayer {
 export interface GameState {
   roomId: string;
   status: 'lobby' | 'started' | 'finished';
+  difficulty: 'normal' | 'easy';
   players: PublicPlayer[];
   currentPlayerId: string | null;
   diceValues: number[];
@@ -120,6 +123,6 @@ export interface GameState {
   awaitingDreamChoice: string[];
   awaitingFastTrackChoice: string | null;
   dreamMarkers?: Record<string, number>;
-  logs: { ts: number; player: string; color: string; message: string }[];
+  logs: LogEntry[];
   winnerId: string | null;
 }

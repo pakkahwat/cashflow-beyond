@@ -31,10 +31,17 @@ export default function CardModal({ card, me, isMyTurn }: Props) {
 
   const ownedStock = me?.assets.stocks.find((s: any) => s.symbol === card.symbol);
   const ownedGold = me?.assets.preciousMetals.find((g: any) => g.symbol === card.symbol);
+  const ownedRECount = me?.assets.realEstates?.length ?? 0;
   const family =
     card.type === 'damage' || (card.applicableToEveryOne !== undefined && card.value !== undefined)
       ? 'market'
       : 'deal';
+  const isGoldMarket = card.type === 'goldCoins' || (card.symbol || '').toLowerCase() === 'gold';
+  const canSellOutOfTurn =
+    (card.type === 'stock' && !!ownedStock) ||
+    (isGoldMarket && !!ownedGold) ||
+    (family === 'market' && card.value !== undefined && ownedRECount > 0) ||
+    !!card.applicableToEveryOne;
 
   return (
     <div className="modal-backdrop">
@@ -120,8 +127,7 @@ export default function CardModal({ card, me, isMyTurn }: Props) {
               </button>
             )}
 
-            {/* Market: sell gold at offered price */}
-            {family === 'market' && card.symbol === 'gold' && ownedGold && (
+            {family === 'market' && isGoldMarket && ownedGold && (
               <div className="qty-row">
                 <input
                   type="number"
@@ -136,8 +142,7 @@ export default function CardModal({ card, me, isMyTurn }: Props) {
               </div>
             )}
 
-            {/* Market: sell a matching property */}
-            {family === 'market' && (me?.assets.realEstates.length ?? 0) > 0 && card.value !== undefined && (
+            {family === 'market' && ownedRECount > 0 && card.value !== undefined && (
               <div className="sell-list">
                 <p className="muted">{t('card.marketSell')}</p>
                 {me!.assets.realEstates.map((r: any) => (
@@ -157,24 +162,49 @@ export default function CardModal({ card, me, isMyTurn }: Props) {
               {t('card.skip')}
             </button>
           </div>
-        ) : card.type === 'stock' && ownedStock ? (
-          // Not your turn, but you hold this stock — you may still sell at the drawn price.
+        ) : canSellOutOfTurn ? (
           <div className="card-actions">
             <p className="muted center">{t('card.othersSell')}</p>
-            <div className="qty-row">
-              <input
-                type="number"
-                min={1}
-                max={ownedStock.count}
-                value={count}
-                onChange={(e) =>
-                  setCount(Math.max(1, Math.min(ownedStock.count, Number(e.target.value))))
-                }
-              />
-              <button className="btn primary" onClick={() => act('sellStocks', { count })}>
-                {t('card.sell')} {count} ({money((card.price ?? 0) * count)})
-              </button>
-            </div>
+            {card.type === 'stock' && ownedStock && (
+              <div className="qty-row">
+                <input
+                  type="number"
+                  min={1}
+                  max={ownedStock.count}
+                  value={count}
+                  onChange={(e) =>
+                    setCount(Math.max(1, Math.min(ownedStock.count, Number(e.target.value))))
+                  }
+                />
+                <button className="btn primary" onClick={() => act('sellStocks', { count })}>
+                  {t('card.sell')} {count} ({money((card.price ?? 0) * count)})
+                </button>
+              </div>
+            )}
+            {isGoldMarket && ownedGold && family === 'market' && (
+              <div className="qty-row">
+                <input
+                  type="number"
+                  min={1}
+                  max={ownedGold.count}
+                  value={count}
+                  onChange={(e) => setCount(Math.max(1, Number(e.target.value)))}
+                />
+                <button className="btn primary" onClick={() => act('sellGold', { count })}>
+                  {t('card.sell')} {count} ({money((card.cost ?? 0) * count)})
+                </button>
+              </div>
+            )}
+            {family === 'market' && ownedRECount > 0 && card.value !== undefined && (
+              <div className="sell-list">
+                <p className="muted">{t('card.marketSell')}</p>
+                {me!.assets.realEstates.map((r: any) => (
+                  <button key={r.id} className="btn" onClick={() => act('sellRealEstate', { assetId: r.id })}>
+                    {t('card.sell')} {r.symbol}
+                  </button>
+                ))}
+              </div>
+            )}
             <p className="muted center small">{t('game.waitingTurn')}</p>
           </div>
         ) : (

@@ -181,6 +181,9 @@ export class GameRoom {
       case 'startGame':
         res = g.start(playerId);
         break;
+      case 'setDifficulty':
+        res = g.setDifficulty(playerId, p.difficulty === 'easy' ? 'easy' : 'normal');
+        break;
       case 'rollDice':
         res = g.rollDice(playerId, Number(p.diceCount) || 1);
         break;

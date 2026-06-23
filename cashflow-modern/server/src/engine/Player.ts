@@ -125,12 +125,21 @@ export class Player {
     return amount;
   }
 
-  /** Doodads are mandatory; cash may go negative and require a rescue. */
-  doodad(card: Card): 'ok' | 'skip' {
-    const cost = card.cost ?? 0;
+  /**
+   * Doodads are mandatory; cash may go negative and require a rescue.
+   * On Easy difficulty, an unaffordable doodad is capped at 50% of current
+   * cash so a single bad draw can't wipe out a thin bankroll.
+   */
+  doodad(card: Card, difficulty: 'normal' | 'easy' = 'normal'): 'skip' | 'ok' | { capped: true; paid: number } {
     if (card.isConditional && this.babies <= 0) return 'skip';
+    let cost = card.cost ?? 0;
+    let capped = false;
+    if (difficulty === 'easy' && this.cash > 0 && cost > this.cash / 2) {
+      cost = Math.round(this.cash / 2);
+      capped = true;
+    }
     this.record(-cost, card.heading ?? 'Doodad');
-    return 'ok';
+    return capped ? { capped: true, paid: cost } : 'ok';
   }
 
   /** Charity is optional and only allowed when affordable. */
@@ -142,11 +151,12 @@ export class Player {
     return true;
   }
 
-  /** Downsized is mandatory: pay total expenses and lose 2 turns. */
-  downsized(): number {
-    const amount = this.totalExpenses;
+  /** Downsized is mandatory: pay total expenses (or half on Easy) and lose turns. */
+  downsized(difficulty: 'normal' | 'easy' = 'normal'): number {
+    const full = this.totalExpenses;
+    const amount = difficulty === 'easy' ? Math.round(full / 2) : full;
     this.record(-amount, 'Downsized');
-    this.skippedTurns = 2;
+    this.skippedTurns = difficulty === 'easy' ? 1 : 2;
     this.extraDiceTurns = 0; // Downsized ends the Charity dice bonus
     return amount;
   }
@@ -384,10 +394,11 @@ export class Player {
     return amount;
   }
 
-  buyFastTrackInvestment(cost: number, cashFlow: number, name: string, id: string): boolean {
+  buyFastTrackInvestment(cost: number, cashFlow: number, name: string, id: string, downPayment?: number): boolean {
+    const paid = downPayment ?? cost; // L7: use down payment if provided
     if (this.ownedInvestments.has(id)) return false;
-    if (this.cash < cost) return false;
-    this.record(-cost, `Invest: ${name}`);
+    if (this.cash < paid) return false;
+    this.record(-paid, `Invest: ${name}`);
     this.fastTrackCashFlowGain += cashFlow;
     this.ownedInvestments.add(id);
     return true;

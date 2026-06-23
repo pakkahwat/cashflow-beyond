@@ -9,17 +9,26 @@ export type RatTileType =
   | 'baby'
   | 'start';
 
-const RAT_MAP: Record<number, RatTileType> = {};
-const set = (ps: number[], t: RatTileType) => ps.forEach((p) => (RAT_MAP[p] = t));
-set([1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23], 'deal');
-set([6, 14, 22], 'payday');
-set([8, 16, 24], 'market');
-set([2, 10, 18], 'doodad');
-set([4], 'charity');
-set([20], 'downsized');
-set([12], 'baby');
+export type Difficulty = 'normal' | 'easy';
 
-export const ratTileType = (position: number): RatTileType => RAT_MAP[position] ?? 'deal';
+const NORMAL_MAP: Record<number, RatTileType> = {};
+const EASY_MAP: Record<number, RatTileType> = {};
+const set = (map: Record<number, RatTileType>, ps: number[], t: RatTileType) =>
+  ps.forEach((p) => (map[p] = t));
+set(NORMAL_MAP, [1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23], 'deal');
+set(NORMAL_MAP, [6, 14, 22], 'payday');
+set(NORMAL_MAP, [8, 16, 24], 'market');
+set(NORMAL_MAP, [2, 10, 18], 'doodad');
+set(NORMAL_MAP, [4], 'charity');
+set(NORMAL_MAP, [20], 'downsized');
+set(NORMAL_MAP, [12], 'baby');
+// Easy: two extra payday tiles (9 and 17) replace deals.
+EASY_MAP[9] = 'payday';
+EASY_MAP[17] = 'payday';
+for (let i = 1; i <= 24; i++) EASY_MAP[i] ??= NORMAL_MAP[i];
+
+export const ratTileType = (position: number, difficulty: Difficulty = 'normal'): RatTileType =>
+  (difficulty === 'easy' ? EASY_MAP[position] : NORMAL_MAP[position]) ?? 'deal';
 
 export interface Cell {
   row: number;

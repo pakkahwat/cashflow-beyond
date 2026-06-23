@@ -32,6 +32,17 @@ describe('Fast Track investment de-dup (C2)', () => {
   });
 });
 
+describe('Fast Track investment downPayment (L7)', () => {
+  it('uses downPayment instead of full cost when provided', () => {
+    const p = makePlayer();
+    p.cash = 1_000_000;
+    // full cost 200k but down 50k
+    expect(p.buyFastTrackInvestment(200000, 20000, 'Software', 'software', 50000)).toBe(true);
+    expect(p.cash).toBe(950000); // deducted only 50k
+    expect(p.fastTrackCashFlowGain).toBe(20000);
+  });
+});
+
 describe('Fast Track losses (M1)', () => {
   it('full=true takes all cash; half=true takes half', () => {
     const p = makePlayer();

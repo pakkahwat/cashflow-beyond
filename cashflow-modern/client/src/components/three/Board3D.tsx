@@ -51,7 +51,7 @@ export default function Board3D({ state, myId, dreams, fastTrack, quality }: Boa
           outputColorSpace: THREE.SRGBColorSpace
         }}
         fallback={
-          <RatRaceBoard players={state.players} currentId={state.currentPlayerId} center={null} />
+          <RatRaceBoard players={state.players} currentId={state.currentPlayerId} center={null} difficulty={state.difficulty} />
         }
       >
         <color attach="background" args={['#0b0f1d']} />
@@ -73,6 +73,7 @@ export default function Board3D({ state, myId, dreams, fastTrack, quality }: Boa
             currentId={state.currentPlayerId}
             quality={quality}
             reducedMotion={reducedMotion}
+            difficulty={state.difficulty}
           />
         )}
 

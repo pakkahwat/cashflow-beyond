@@ -153,3 +153,143 @@ describe('Start guards (L2 + L10)', () => {
     expect(g.players.some((p) => p.id === g.currentPlayer.id)).toBe(true);
   });
 });
+
+describe('sellRealEstate only valid on a market card (bug #A1)', () => {
+  it('refuses to sell using a non-market pending card', () => {
+    const g = start2();
+    const me = g.currentPlayer;
+    me.cash = 100000;
+    me.buyRealEstate({
+      id: 're1', type: 'realEstate', symbol: 'duplex',
+      cost: 60000, mortgage: 48000, downPayment: 12000, cashFlow: 300
+    } as any);
+    const assetId = me.assets.realEstates[0].id;
+
+    // A brand-new real-estate DEAL card is pending (not a market sale).
+    (g as any).pendingCard = { id: 'otherDeal', type: 'realEstate', symbol: 'condo', cost: 50000 };
+    (g as any).hasRolled = true;
+    (g as any).resolved = false;
+    const cashBefore = me.cash;
+
+    const res = g.cardAction(me.id, 'sellRealEstate', { assetId });
+    expect(res.ok).toBe(false); // refused
+    // Player keeps both the asset and their cash
+    expect(me.assets.realEstates.length).toBe(1);
+    expect(me.cash).toBe(cashBefore);
+  });
+});
+
+describe('Easy mode — softer Downsized (A2)', () => {
+  it('pays half expenses (rounded) and skips only 1 turn when difficulty=easy', () => {
+    const g = start2();
+    g.difficulty = 'easy';
+    const me = g.currentPlayer;
+    const totalExp = me.totalExpenses; // what Normal would charge
+    const cashBefore = me.cash;
+
+    me.position = 20; // downsized tile
+    (g as any).resolveRatRaceLanding(0); // land without moving
+
+    // Easy: half of totalExpenses, rounded; only 1 skipped turn.
+    const expectedPay = Math.round(totalExp / 2);
+    expect(me.cash).toBe(cashBefore - expectedPay);
+    expect(me.skippedTurns).toBe(1);
+  });
+
+  it('keeps the rulebook penalty when difficulty=normal (default)', () => {
+    const g = start2();
+    const me = g.currentPlayer;
+    const totalExp = me.totalExpenses;
+    const cashBefore = me.cash;
+    me.position = 20;
+    (g as any).resolveRatRaceLanding(0);
+    expect(me.cash).toBe(cashBefore - totalExp);
+    expect(me.skippedTurns).toBe(2);
+  });
+});
+
+describe('Easy mode — Doodad cap (A3)', () => {
+  it('caps an expensive doodad at 50% of current cash on easy', () => {
+    const g = start2();
+    g.difficulty = 'easy';
+    const me = g.currentPlayer;
+    me.cash = 1000; // small bankroll, big doodad incoming
+    const cashBefore = me.cash;
+    const card = { id: 'd1', type: 'doodad' as const, heading: 'Boat', cost: 5000 };
+
+    (g as any).decks = {
+      draw: () => ({ ...card })
+    };
+    me.position = 2; // doodad tile
+    (g as any).resolveRatRaceLanding(0);
+
+    // Cap = 50% of cash = $500. Full cost $5000 would bankrupt the player.
+    expect(me.cash).toBe(cashBefore - 500);
+  });
+
+  it('charges full doodad when cash comfortably covers it (easy)', () => {
+    const g = start2();
+    g.difficulty = 'easy';
+    const me = g.currentPlayer;
+    me.cash = 100000;
+    const cashBefore = me.cash;
+    const card = { id: 'd1', type: 'doodad' as const, heading: 'Dinner', cost: 200 };
+    (g as any).decks = { draw: () => ({ ...card }) };
+    me.position = 2;
+    (g as any).resolveRatRaceLanding(0);
+    expect(me.cash).toBe(cashBefore - 200);
+  });
+
+  it('charges full doodad regardless of cash on normal', () => {
+    const g = start2();
+    const me = g.currentPlayer;
+    me.cash = 1000;
+    const cashBefore = me.cash;
+    const card = { id: 'd1', type: 'doodad' as const, heading: 'Boat', cost: 5000 };
+    (g as any).decks = { draw: () => ({ ...card }) };
+    me.position = 2;
+    (g as any).resolveRatRaceLanding(0);
+    expect(me.cash).toBe(cashBefore - 5000);
+  });
+});
+
+describe('Easy mode — starting cash boost (A4)', () => {
+  it('starts each player with 2x monthly cash flow + savings on easy', () => {
+    const g = new Game('R');
+    g.addPlayer('a', 'Alice');
+    g.addPlayer('b', 'Bob');
+    g.difficulty = 'easy';
+    g.start('a');
+    for (const p of g.players) {
+      const prof = (professions as any[]).find((x) => x.profession === p.professionName);
+      expect(p.cash).toBe(p.cashFlow * 2 + prof.assets.savings);
+      expect(p.assets.savings).toBe(0);
+    }
+  });
+
+  it('still gives 1x cash flow + savings on normal (regression)', () => {
+    const g = start2();
+    for (const p of g.players) {
+      const prof = (professions as any[]).find((x) => x.profession === p.professionName);
+      expect(p.cash).toBe(p.cashFlow + prof.assets.savings);
+      expect(p.assets.savings).toBe(0);
+    }
+  });
+});
+
+describe('Host sets difficulty in lobby (A6)', () => {
+  it('lets the host change difficulty before start, refuses after', () => {
+    const g = start2();
+    const host = g.host!;
+    expect(g.setDifficulty(host.id, 'easy').ok).toBe(false); // already started
+    expect(g.difficulty).toBe('normal');
+
+    const g2 = new Game('R');
+    g2.addPlayer('h', 'Host');
+    g2.addPlayer('p', 'Player');
+    expect(g2.setDifficulty('h', 'easy').ok).toBe(true);
+    expect(g2.difficulty).toBe('easy');
+    expect(g2.setDifficulty('p', 'normal').ok).toBe(false); // not host
+    expect(g2.difficulty).toBe('easy');
+  });
+});

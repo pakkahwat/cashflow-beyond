@@ -169,6 +169,7 @@ export interface FastTrackTile {
   name?: string;
   nameTh?: string;
   cost?: number;
+  downPayment?: number; // L7: pay down payment (instead of full cost) for FT investments
   cashFlow?: number; // monthly cashflow gained when bought (investment)
   amount?: number; // loss amount, or 'half' marker via half flag
   half?: boolean; // loss = half of cash
@@ -231,6 +232,7 @@ export type GamePhaseStatus = 'lobby' | 'started' | 'finished';
 export interface PublicGameState {
   roomId: string;
   status: GamePhaseStatus;
+  difficulty: 'normal' | 'easy';
   players: PublicPlayer[];
   currentPlayerId: string | null;
   diceValues: number[];
@@ -241,6 +243,6 @@ export interface PublicGameState {
   awaitingDreamChoice: string[]; // player ids that must pick a dream
   awaitingFastTrackChoice: string | null; // current player may choose to enter Fast Track
   dreamMarkers: Record<string, number>; // extra-cost markers per dream id
-  logs: { ts: number; player: string; color: string; message: string }[];
+  logs: { ts: number; player: string; color: string; code: string; params: Record<string, unknown> }[];
   winnerId: string | null;
 }

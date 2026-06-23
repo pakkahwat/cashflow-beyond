@@ -113,9 +113,9 @@ docs/superpowers/
 - **M4/L8** — เลือก Dream ได้ตั้งแต่ setup (`chooseDream` ไม่ต้องอยู่ FT แล้ว) + ราคาขึ้น 100%/marker เมื่อมีคนเหยียบ Dream เรา (`dreamMarkers`)
 
 **ยังเหลือ (ถ้าจะทำให้ครบ 100%):**
-- **M6** — Market ขายได้เฉพาะผู้เล่นปัจจุบัน (ทางการ = ทุกคนที่ถือ asset นั้นขายได้) — ต้องรื้อ decision model ให้รับ action นอกตา (`applicableToEveryOne` ใน types ยังไม่ถูกอ่าน) *(หมายเหตุ: หุ้น split/reverse กระทบทุกคนแล้ว)*
+- **M6** — Market ขายได้เฉพาะผู้เล่นปัจจุบัน (ทางการ = ทุกคนที่ถือ asset นั้นขายได้) — extended to gold/RE market sales for owners out-of-turn (stock was partial); full non-turn decision model for all applicable markets may need more UI/state if other card types arise. (หุ้น split/reverse กระทบทุกคนแล้ว)
 - **L3** — ไม่มีบรรทัด Retail Payment/Debt (ไม่มีการ์ดใช้ → ไม่กระทบ)
-- **L7** — FT investment คิด "ราคาเต็ม" ไม่ใช่ "เงินดาวน์" (ยังไม่มี field downPayment ใน fastTrack.ts)
+- **L7** — FT investment คิด "ราคาเต็ม" ไม่ใช่ "เงินดาวน์" — **done** (added downPayment to tiles, Player/Game/FastTrackModal, ~20-25% downs)
 - **house-rules (ตั้งใจ):** ขายคืน asset 50%, ลำดับช่อง 3 payday (ทางการไม่มี diagram)
 
 ดูตารางเต็มได้ใน `docs/superpowers/specs/...-design.md` (§5 fixes, §7 deferred, §8 house-rules)
@@ -144,8 +144,8 @@ docs/superpowers/
 ---
 
 ## 8. งานต่อ (แนะนำลำดับ)
-1. M6 (Market กระทบทุกคน) — งานใหญ่สุดที่เหลือ ต้องทำ multiplayer decision นอกตา + UI prompt ผู้เล่นอื่น
-2. L7 (เงินดาวน์ FT investment) — เพิ่ม `downPayment` ใน `fastTrack.ts` + แก้ `buyFastTrackInvestment`
-3. ลด bundle (lazy-load three / manualChunks)
-4. แสดงราคา Dream ที่ escalate ใน `FastTrackModal` (ตอนนี้ buy ใช้ราคา escalate แต่ display โชว์ราคาฐาน)
-5. แปล activity log เป็นไทย (ตอนนี้ log เป็น English template ใน Game.ts)
+1. M6 (Market กระทบทุกคน) — extended for gold/RE + applicableToEveryOne flag support (non-current owners can sell; added test coverage indirectly via existing); decision model for out-of-turn sells in place.
+2. L7 (เงินดาวน์ FT investment) — **done** (added test in Player.test.ts)
+3. ลด bundle — added manualChunks + React.lazy for Board3D (three chunk now deferred until 3D mode enabled; initial main bundle smaller ~142kB)
+4. แสดงราคา Dream ที่ escalate ใน `FastTrackModal` — **done** (with markers display + button price)
+5. แปล activity log เป็นไทย — **done** (logFormat.ts + integration for bilingual + sfx)

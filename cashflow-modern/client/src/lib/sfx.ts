@@ -158,20 +158,3 @@ export function setMuted(m: boolean) {
 export function getMuted() {
   return muted;
 }
-
-// Map a server activity-log line (English templates) to a sound cue.
-export function soundForLog(msg: string): SfxName | null {
-  if (/rolled /.test(msg)) return 'roll';
-  if (/received payday/.test(msg)) return 'payday';
-  if (/WON the game/.test(msg)) return 'win';
-  if (/escaped the Rat Race/.test(msg)) return 'fastTrack';
-  if (/Downsized/.test(msg)) return 'downsized';
-  if (/new baby/.test(msg)) return 'baby';
-  if (/charity/i.test(msg)) return 'charity';
-  if (/Market:/.test(msg)) return 'market';
-  if (/Doodad/i.test(msg)) return 'doodad';
-  if (/landed on a Deal/.test(msg)) return 'deal';
-  if (/drew a (Small|Big) Deal/.test(msg)) return 'card';
-  if (/bought/.test(msg)) return 'buy';
-  return null;
-}

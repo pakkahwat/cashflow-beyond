@@ -25,7 +25,11 @@
     "start": "Start game",
     "leave": "Leave room",
     "needHost": "Only the host can start the game",
-    "share": "Share this code with friends to join"
+    "share": "Share this code with friends to join",
+    "difficulty": "Difficulty",
+    "normal": "Normal",
+    "easy": "Easy",
+    "easyHint": "Lighter penalties, faster cash flow, bigger starting bankroll"
   },
   "game": {
     "yourTurn": "Your turn",

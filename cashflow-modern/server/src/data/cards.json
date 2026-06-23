@@ -1411,7 +1411,8 @@
       "heading": "Collector wants Gold Coins",
       "description": "Wealthy collector is looking for gold coins. Cash offer of $500 for each coin.",
       "rule": "Everyone may sell any number of coins at this price.",
-      "cost": 500
+      "cost": 500,
+      "applicableToEveryOne": true
     },
     {
       "id": "marketLottery03",

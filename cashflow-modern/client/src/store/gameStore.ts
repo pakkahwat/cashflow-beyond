@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { onState, onId, fetchBoard, resume, savedRoom } from '../lib/socket';
-import { play as playSfx, soundForLog } from '../lib/sfx';
+import { play as playSfx } from '../lib/sfx';
+import { soundForLog } from '../lib/logFormat';
 import type { GameState, Dream, FastTrackTile } from '../lib/types';
 
 type Screen = 'home' | 'lobby' | 'game';
@@ -77,7 +78,7 @@ onState((state: GameState) => {
       sfxLastTs = Math.max(sfxLastTs, logs[0].ts);
       let delay = 0;
       for (const l of fresh) {
-        const s = soundForLog(l.message);
+        const s = soundForLog(l);
         if (s) {
           const at = delay;
           setTimeout(() => playSfx(s), at);

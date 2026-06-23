@@ -13,9 +13,15 @@ export default function Lobby() {
 
   if (!state) return null;
   const isHost = !!me?.isHost;
+  const difficulty = state.difficulty ?? 'normal';
 
   const start = async () => {
     const res = await emit('startGame');
+    if (!res.ok) setError(res.error || 'generic');
+  };
+  const pickDifficulty = async (d: 'normal' | 'easy') => {
+    if (d === difficulty) return;
+    const res = await emit('setDifficulty', { difficulty: d });
     if (!res.ok) setError(res.error || 'generic');
   };
   const leave = async () => {
@@ -51,6 +57,27 @@ export default function Lobby() {
             {!p.connected && <span className="badge off">offline</span>}
           </div>
         ))}
+      </div>
+
+      <div className="difficulty-picker">
+        <h3>{t('lobby.difficulty')}</h3>
+        <div className="difficulty-row">
+          <button
+            className={`btn small ${difficulty === 'normal' ? 'primary' : ''}`}
+            disabled={!isHost}
+            onClick={() => pickDifficulty('normal')}
+          >
+            {t('lobby.normal')}
+          </button>
+          <button
+            className={`btn small ${difficulty === 'easy' ? 'primary' : ''}`}
+            disabled={!isHost}
+            onClick={() => pickDifficulty('easy')}
+          >
+            {t('lobby.easy')}
+          </button>
+        </div>
+        {difficulty === 'easy' && <p className="hint">{t('lobby.easyHint')}</p>}
       </div>
 
       {isHost ? (
