@@ -76,7 +76,7 @@ const scheduleReconnect = () => {
     try {
       await connect(roomId);
       const idToken = await getIdToken();
-      await emit('join', { intent: 'resume', playerId: getPlayerId(), username: getUsername(), ...(idToken ? { idToken } : {}) });
+      await emit('join', { intent: 'resume', playerId: getPlayerId(), username: getUsername(), idToken });
       reconnectAttempts = 0;
     } catch {
       scheduleReconnect();
@@ -147,10 +147,11 @@ export const createRoom = async (username: string): Promise<Ack> => {
     method: 'POST',
     headers: idToken ? { Authorization: `Bearer ${idToken}` } : {},
   });
+  if (!res.ok) return { ok: false, error: res.status === 401 ? 'auth_required' : 'generic' };
   const { roomId } = await res.json();
   await connect(roomId);
   const playerId = getPlayerId();
-  const ack = await emit('join', { intent: 'create', playerId, username, ...(idToken ? { idToken } : {}) });
+  const ack = await emit('join', { intent: 'create', playerId, username, idToken });
   if (ack.ok) remember(ack.roomId || roomId, username);
   return ack;
 };
@@ -163,7 +164,7 @@ export const joinRoom = async (roomId: string, username: string): Promise<Ack> =
   }
   const idToken = await getIdToken();
   const playerId = getPlayerId();
-  const ack = await emit('join', { intent: 'join', playerId, username, ...(idToken ? { idToken } : {}) });
+  const ack = await emit('join', { intent: 'join', playerId, username, idToken });
   if (ack.ok) remember(ack.roomId || roomId, username);
   return ack;
 };
@@ -181,7 +182,7 @@ export const resume = async (): Promise<Ack | null> => {
   }
   const idToken = await getIdToken();
   const playerId = getPlayerId();
-  const ack = await emit('join', { intent: 'resume', playerId, username: name, ...(idToken ? { idToken } : {}) });
+  const ack = await emit('join', { intent: 'resume', playerId, username: name, idToken });
   if (!ack.ok) forget();
   return ack;
 };
@@ -196,6 +197,7 @@ export const leaveRoom = async (): Promise<Ack> => {
 
 export const fetchBoard = async (): Promise<{ dreams: any[]; fastTrack: any[] }> => {
   const res = await fetch(`${apiBase}/api/board`);
+  if (!res.ok) return { dreams: [], fastTrack: [] };
   return res.json();
 };
 
@@ -209,11 +211,12 @@ export const createBotGame = async (username: string, count: number): Promise<Ac
     method: 'POST',
     headers: idToken ? { Authorization: `Bearer ${idToken}` } : {},
   });
+  if (!res.ok) return { ok: false, error: res.status === 401 ? 'auth_required' : 'generic' };
   const { roomId } = await res.json();
   await connect(roomId);
   const playerId = getPlayerId();
   // First join as the human host (identical to createRoom).
-  const joinAck = await emit('join', { intent: 'create', playerId, username, ...(idToken ? { idToken } : {}) });
+  const joinAck = await emit('join', { intent: 'create', playerId, username, idToken });
   if (!joinAck.ok) return joinAck;
   remember(joinAck.roomId || roomId, username);
   // Then issue createBotGame which adds bots + starts the game server-side.

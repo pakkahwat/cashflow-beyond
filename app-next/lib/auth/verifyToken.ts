@@ -7,7 +7,7 @@ export async function verifyToken(idToken: string | undefined): Promise<Verified
     return m ? { uid: m[1], name: m[2], picture: undefined } : null;
   }
   try {
-    const { getAuth } = await import('../firebaseAdmin.js');
+    const { getAuth } = await import('../firebaseAdmin');
     const d = await getAuth().verifyIdToken(idToken);
     return { uid: d.uid, name: d.name || d.email || 'Player', picture: d.picture };
   } catch {
