@@ -5,6 +5,10 @@ import WebSocket from 'ws';
 import { attachWsServer } from './gameSocket.js';
 import { rooms } from './RoomManager.js';
 
+// Enable token bypass so tests don't need a real Firebase project.
+// Must be set before any module that reads WS_AUTH_BYPASS is imported.
+process.env.WS_AUTH_BYPASS = '1';
+
 let server: Server;
 let port: number;
 
@@ -47,13 +51,13 @@ describe('game websocket protocol', () => {
     const code = 'TEST1';
     const a = connect(code);
     await a.readyP;
-    const createAck = await a.emit('join', { playerId: 'p1', username: 'Alice', intent: 'create' });
+    const createAck = await a.emit('join', { idToken: 'test:p1:Alice', intent: 'create' });
     expect(createAck.ok).toBe(true);
     expect(createAck.roomId).toBe(code);
 
     const b = connect(code);
     await b.readyP;
-    const joinAck = await b.emit('join', { playerId: 'p2', username: 'Bob', intent: 'join' });
+    const joinAck = await b.emit('join', { idToken: 'test:p2:Bob', intent: 'join' });
     expect(joinAck.ok).toBe(true);
 
     // both sockets should have received at least one state broadcast
@@ -68,7 +72,7 @@ describe('game websocket protocol', () => {
   it('rejects joining a non-existent room', async () => {
     const c = connect('EMPTY');
     await c.readyP;
-    const ack = await c.emit('join', { playerId: 'x', username: 'X', intent: 'join' });
+    const ack = await c.emit('join', { idToken: 'test:x:X', intent: 'join' });
     expect(ack.ok).toBe(false);
     expect(ack.error).toBe('room_not_found');
     c.close();
@@ -80,11 +84,11 @@ describe('game websocket protocol', () => {
     // Two players join so the engine's minimum-2-players check passes
     const a = connect(code);
     await a.readyP;
-    await a.emit('join', { playerId: 'host', username: 'Host', intent: 'create' });
+    await a.emit('join', { idToken: 'test:host:Host', intent: 'create' });
 
     const b = connect(code);
     await b.readyP;
-    await b.emit('join', { playerId: 'p2', username: 'Player2', intent: 'join' });
+    await b.emit('join', { idToken: 'test:p2:Player2', intent: 'join' });
 
     const startAck = await a.emit('startGame', {});
     expect(startAck.ok).toBe(true);
@@ -97,7 +101,7 @@ describe('game websocket protocol', () => {
     // Reconnect with intent: resume — room must still exist (not purged)
     const c = connect(code);
     await c.readyP;
-    const resumeAck = await c.emit('join', { playerId: 'host', intent: 'resume' });
+    const resumeAck = await c.emit('join', { idToken: 'test:host:Host', intent: 'resume' });
     expect(resumeAck.ok).toBe(true);
     expect(resumeAck.roomId).toBe(code);
 
@@ -113,7 +117,8 @@ describe('bot mode (createBotGame / auto-play)', () => {
     const a = connect(code);
     await a.readyP;
     // Human joins (creates the room) — bots are added server-side.
-    const join = await a.emit('join', { playerId: 'human:1', username: 'Human', intent: 'create' });
+    // uid must not contain ':' so the test token regex (test:<uid>:<name>) matches cleanly.
+    const join = await a.emit('join', { idToken: 'test:human1:Human', intent: 'create' });
     expect(join.ok).toBe(true);
 
     const createAck = await a.emit('createBotGame', { count: 1 });
@@ -134,8 +139,8 @@ describe('bot mode (createBotGame / auto-play)', () => {
     // If the human is first, pick a dream and end the turn so it becomes the bot's.
     const giveUpHumanTurn = async () => {
       const s = room.game.getState();
-      if (s.currentPlayerId !== 'human:1') return;
-      if (s.awaitingDreamChoice.includes('human:1')) {
+      if (s.currentPlayerId !== 'human1') return;
+      if (s.awaitingDreamChoice.includes('human1')) {
         await a.emit('chooseDream', { dreamId: 'orphanage' });
       }
       if (!room.game.getState().hasRolled) await a.emit('rollDice', { diceCount: 1 });
@@ -146,7 +151,7 @@ describe('bot mode (createBotGame / auto-play)', () => {
         if (st.awaitingDealChoice) { await a.emit('chooseDeal', { size: 'small' }); continue; }
         if (st.pendingCard) { await a.emit('cardAction', { action: 'skip' }); continue; }
         if (st.pendingFastTrackTile) { await a.emit('fastTrackAction', { action: 'skip' }); continue; }
-        if (room.game.players.find((pl) => pl.id === 'human:1')!.cash < 0) { await a.emit('liquidate', {}); continue; }
+        if (room.game.players.find((pl) => pl.id === 'human1')!.cash < 0) { await a.emit('liquidate', {}); continue; }
         break;
       }
       await a.emit('endTurn', {});
@@ -159,7 +164,7 @@ describe('bot mode (createBotGame / auto-play)', () => {
     for (let i = 0; i < 60; i++) {
       await wait(30);
       const cur = room.game.getState().currentPlayerId;
-      if (cur === 'human:1' && room.game.players.find((pl) => pl.id === botId)!.position >= 0) {
+      if (cur === 'human1' && room.game.players.find((pl) => pl.id === botId)!.position >= 0) {
         // Control is back on the human and the bot had a chance to act.
         // Confirm the bot actually acted: it chose a dream (dream choice fires at
         // start) OR it advanced its board position / fast-track at least once.
@@ -185,7 +190,7 @@ describe('bot mode (createBotGame / auto-play)', () => {
     const code = 'BOTL1';
     const a = connect(code);
     await a.readyP;
-    await a.emit('join', { playerId: 'host:1', username: 'Host', intent: 'create' });
+    await a.emit('join', { idToken: 'test:host1:Host', intent: 'create' });
 
     const ack = await a.emit('addBot', {});
     expect(ack.ok).toBe(true);
@@ -215,7 +220,7 @@ describe('room eviction', () => {
     const code = 'LOBB1';
     const a = connect(code);
     await a.readyP;
-    await a.emit('join', { playerId: 'solo', username: 'Solo', intent: 'create' });
+    await a.emit('join', { idToken: 'test:solo:Solo', intent: 'create' });
     a.close();
     await new Promise((r) => setTimeout(r, 50));
     expect(rooms.get(code)).toBeUndefined();
@@ -236,10 +241,10 @@ describe('room eviction', () => {
     const codeGone = 'IDLE1';
     const a1 = connect(codeGone);
     await a1.readyP;
-    await a1.emit('join', { playerId: 'h1', username: 'H1', intent: 'create' });
+    await a1.emit('join', { idToken: 'test:h1:H1', intent: 'create' });
     const b1 = connect(codeGone);
     await b1.readyP;
-    await b1.emit('join', { playerId: 'p1', username: 'P1', intent: 'join' });
+    await b1.emit('join', { idToken: 'test:p1:P1', intent: 'join' });
     const sa1 = await a1.emit('startGame', {});
     expect(sa1.ok).toBe(true);
 
@@ -264,10 +269,10 @@ describe('room eviction', () => {
     const codeSurv = 'IDLE2';
     const a2 = connect(codeSurv);
     await a2.readyP;
-    await a2.emit('join', { playerId: 'h2', username: 'H2', intent: 'create' });
+    await a2.emit('join', { idToken: 'test:h2:H2', intent: 'create' });
     const b2 = connect(codeSurv);
     await b2.readyP;
-    await b2.emit('join', { playerId: 'p2', username: 'P2', intent: 'join' });
+    await b2.emit('join', { idToken: 'test:p2:P2', intent: 'join' });
     const sa2 = await a2.emit('startGame', {});
     expect(sa2.ok).toBe(true);
 
@@ -287,7 +292,7 @@ describe('room eviction', () => {
     await new Promise((r) => setTimeout(r, 30));
     const c2 = connect(codeSurv);
     await c2.readyP;
-    const resumeAck = await c2.emit('join', { playerId: 'h2', intent: 'resume' });
+    const resumeAck = await c2.emit('join', { idToken: 'test:h2:H2', intent: 'resume' });
     expect(resumeAck.ok).toBe(true);
 
     // Now wait past the original timer window — room must still exist

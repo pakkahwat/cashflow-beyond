@@ -3,6 +3,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import type { Liabilities } from '../../engine/types.js';
 import { rooms, type Room } from './RoomManager.js';
 import { maybeRunBots } from './botRunner.js';
+import { verifyToken } from '../auth/verifyToken.js';
 
 /** Add `count` (1–3) server-driven bots to a room and flag it as a bot game.
  *  Bots are normal Game players with synthetic ids (`bot:1..N`); they never
@@ -119,33 +120,39 @@ const onMessage = (room: Room, ws: WebSocket, raw: string) => {
   const g = room.game;
 
   if (msg.event === 'join') {
-    const playerId = String(p.playerId || '').trim();
-    const username = String(p.username || '').trim();
-    const intent: 'create' | 'join' | 'resume' = p.intent || 'join';
-    if (!playerId) return ack(false, { error: 'name_required' });
+    // Verify the token asynchronously; everything inside is async from here.
+    verifyToken(p.idToken).then((u) => {
+      if (!u) return ack(false, { error: 'auth_required' });
 
-    const existing = g.players.find((pl) => pl.id === playerId);
+      // Use server-authoritative uid and name from the verified token.
+      const playerId = u.uid;
+      const username = u.name;
+      const intent: 'create' | 'join' | 'resume' = p.intent || 'join';
 
-    if (intent === 'resume') {
-      if (!existing) return ack(false, { error: 'room_not_found' });
-      g.setConnected(playerId, true);
-      attach(room, ws, playerId);
-      ack(true, { roomId: room.code });
+      const existing = g.players.find((pl) => pl.id === playerId);
+
+      if (intent === 'resume') {
+        if (!existing) return ack(false, { error: 'room_not_found' });
+        g.setConnected(playerId, true);
+        attach(room, ws, playerId);
+        ack(true, { roomId: room.code });
+        return broadcast(room);
+      }
+      if (existing) {
+        g.setConnected(playerId, true);
+        attach(room, ws, playerId);
+        ack(true, { roomId: room.code });
+        return broadcast(room);
+      }
+      if (intent === 'join' && g.players.length === 0) {
+        return ack(false, { error: 'room_not_found' });
+      }
+      const res = g.addPlayer(playerId, username);
+      if (res.ok) attach(room, ws, playerId);
+      ack(res.ok, { error: res.error, roomId: room.code });
       return broadcast(room);
-    }
-    if (existing) {
-      g.setConnected(playerId, true);
-      attach(room, ws, playerId);
-      ack(true, { roomId: room.code });
-      return broadcast(room);
-    }
-    if (intent === 'join' && g.players.length === 0) {
-      return ack(false, { error: 'room_not_found' });
-    }
-    const res = g.addPlayer(playerId, username);
-    if (res.ok) attach(room, ws, playerId);
-    ack(res.ok, { error: res.error, roomId: room.code });
-    return broadcast(room);
+    }).catch(() => ack(false, { error: 'auth_required' }));
+    return; // join is async; return early and let the promise resolve
   }
 
   const playerId = room.sockets.get(ws);
