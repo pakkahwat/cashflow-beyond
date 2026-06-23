@@ -50,7 +50,13 @@ const onClose = (room: Room, ws: WebSocket) => {
   if (stillConnected) return;
   room.game.removePlayer(playerId);
   broadcast(room);
-  if (room.sockets.size === 0) rooms.delete(room.code); // free empty rooms
+  // Only free the room when it is still in the lobby phase and everyone has
+  // disconnected. Once a game is started (or finished) we keep the room alive
+  // so that reconnecting players can resume — matching the spec guarantee that
+  // "a client refresh resumes because the room lives in the server process".
+  if (room.sockets.size === 0 && room.game.status === 'lobby') {
+    rooms.delete(room.code);
+  }
 };
 
 const onMessage = (room: Room, ws: WebSocket, raw: string) => {

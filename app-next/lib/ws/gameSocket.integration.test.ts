@@ -72,4 +72,34 @@ describe('game websocket protocol', () => {
     expect(ack.error).toBe('room_not_found');
     c.close();
   });
+
+  it('keeps a started room alive when all sockets disconnect (resume guarantee)', async () => {
+    const code = 'RESM1';
+
+    // Two players join so the engine's minimum-2-players check passes
+    const a = connect(code);
+    await a.readyP;
+    await a.emit('join', { playerId: 'host', username: 'Host', intent: 'create' });
+
+    const b = connect(code);
+    await b.readyP;
+    await b.emit('join', { playerId: 'p2', username: 'Player2', intent: 'join' });
+
+    const startAck = await a.emit('startGame', {});
+    expect(startAck.ok).toBe(true);
+
+    // Simulate both tabs refreshing: all sockets close while game is running
+    a.close();
+    b.close();
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Reconnect with intent: resume — room must still exist (not purged)
+    const c = connect(code);
+    await c.readyP;
+    const resumeAck = await c.emit('join', { playerId: 'host', intent: 'resume' });
+    expect(resumeAck.ok).toBe(true);
+    expect(resumeAck.roomId).toBe(code);
+
+    c.close();
+  });
 });
