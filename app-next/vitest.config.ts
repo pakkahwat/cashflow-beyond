@@ -8,7 +8,7 @@ export default defineConfig({
     alias: [{ find: /^(\.{1,2}\/.*)\.js$/, replacement: '$1' }]
   },
   test: {
-    include: ['engine/**/*.test.ts', 'data/**/*.test.ts'],
+    include: ['engine/**/*.test.ts', 'data/**/*.test.ts', 'lib/**/*.test.ts'],
     environment: 'node'
   }
 });
