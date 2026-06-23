@@ -3,6 +3,8 @@ import { WebSocketServer, WebSocket } from 'ws';
 import type { Liabilities } from '../../engine/types.js';
 import { rooms, type Room } from './RoomManager.js';
 
+const IDLE_MS = Number(process.env.WS_IDLE_MS) || 30 * 60 * 1000;
+
 interface ClientMessage {
   reqId?: string;
   event: string;
@@ -29,6 +31,11 @@ const broadcast = (room: Room) => {
 };
 
 const attach = (room: Room, ws: WebSocket, playerId: string) => {
+  // Cancel any pending idle-deletion — a player is (re)attaching.
+  if (room.idleTimer) {
+    clearTimeout(room.idleTimer);
+    room.idleTimer = undefined;
+  }
   for (const [s, id] of room.sockets) {
     if (id === playerId && s !== ws) {
       room.sockets.delete(s);
@@ -45,17 +52,29 @@ const attach = (room: Room, ws: WebSocket, playerId: string) => {
 const onClose = (room: Room, ws: WebSocket) => {
   const playerId = room.sockets.get(ws);
   room.sockets.delete(ws);
-  if (!playerId) return;
-  const stillConnected = [...room.sockets.values()].includes(playerId);
-  if (stillConnected) return;
-  room.game.removePlayer(playerId);
-  broadcast(room);
-  // Only free the room when it is still in the lobby phase and everyone has
-  // disconnected. Once a game is started (or finished) we keep the room alive
-  // so that reconnecting players can resume — matching the spec guarantee that
-  // "a client refresh resumes because the room lives in the server process".
-  if (room.sockets.size === 0 && room.game.status === 'lobby') {
-    rooms.delete(room.code);
+
+  // If the socket had a real player attached, remove them and broadcast.
+  if (playerId) {
+    const stillConnected = [...room.sockets.values()].includes(playerId);
+    if (!stillConnected) {
+      room.game.removePlayer(playerId);
+      broadcast(room);
+    }
+  }
+
+  // Room eviction — runs regardless of whether playerId was set so that
+  // pre-join (lobby) sockets that close before sending 'join' are also handled.
+  if (room.sockets.size === 0) {
+    if (room.game.status === 'lobby') {
+      // Empty lobby → delete immediately (covers pre-join leak too).
+      rooms.delete(room.code);
+    } else {
+      // Started/finished game → keep alive briefly for reconnect; delete after
+      // IDLE_MS if nobody re-attaches.
+      room.idleTimer = setTimeout(() => {
+        if (room.sockets.size === 0) rooms.delete(room.code);
+      }, IDLE_MS);
+    }
   }
 };
 

@@ -5,6 +5,7 @@ export interface Room {
   code: string;
   game: Game;
   sockets: Map<WebSocket, string>; // ws -> playerId
+  idleTimer?: ReturnType<typeof setTimeout>;
 }
 
 /** In-memory registry of active rooms. One process owns all rooms; nothing is
