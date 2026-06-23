@@ -2,6 +2,34 @@ import type { Server as HttpServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import type { Liabilities } from '../../engine/types.js';
 import { rooms, type Room } from './RoomManager.js';
+import { maybeRunBots } from './botRunner.js';
+
+/** Add `count` (1–3) server-driven bots to a room and flag it as a bot game.
+ *  Bots are normal Game players with synthetic ids (`bot:1..N`); they never
+ *  connect over WebSocket and present no token. Returns the ids actually added. */
+const addBots = (room: Room, count: number): string[] => {
+  if (!room.bots) room.bots = new Set();
+  const added: string[] = [];
+  const n = Math.max(1, Math.min(3, Math.floor(count) || 1));
+  for (let i = 0; i < n; i++) {
+    // Find the next free bot index so repeated `addBot` calls don't collide.
+    let idx = room.bots.size + 1;
+    let id = `bot:${idx}`;
+    while (room.game.players.some((p) => p.id === id)) {
+      idx += 1;
+      id = `bot:${idx}`;
+    }
+    const res = room.game.addPlayer(id, `Bot ${idx}`);
+    if (res.ok) {
+      room.bots.add(id);
+      added.push(id);
+    } else {
+      break; // room full / already started — stop adding
+    }
+  }
+  if (room.bots.size > 0) room.vsBots = true;
+  return added;
+};
 
 const IDLE_MS = Number(process.env.WS_IDLE_MS) || 30 * 60 * 1000;
 
@@ -130,6 +158,42 @@ const onMessage = (room: Room, ws: WebSocket, raw: string) => {
     return broadcast(room);
   }
 
+  // ---- Bot mode (server-authoritative; bots are non-networked players) ----
+
+  if (msg.event === 'addBot') {
+    // Lobby-only: host adds a single bot opponent.
+    if (g.status !== 'lobby') {
+      ack(false, { error: 'game_already_started' });
+      return;
+    }
+    if (g.host?.id !== playerId) {
+      ack(false, { error: 'only_host_can_start' });
+      return;
+    }
+    const added = addBots(room, 1);
+    ack(added.length > 0, { error: added.length ? undefined : 'cannot_add_bot' });
+    return broadcast(room);
+  }
+
+  if (msg.event === 'createBotGame') {
+    // The human is already joined (this socket has a playerId). Add N bots and
+    // start the game; then let the runner auto-play any leading bot turn.
+    if (g.status !== 'lobby') {
+      ack(false, { error: 'game_already_started' });
+      return;
+    }
+    if (g.host?.id !== playerId) {
+      ack(false, { error: 'only_host_can_start' });
+      return;
+    }
+    addBots(room, Number(p.count) || 1);
+    const startRes = g.start(playerId);
+    ack(startRes.ok, { error: startRes.error });
+    broadcast(room);
+    if (startRes.ok) maybeRunBots(room, broadcast);
+    return;
+  }
+
   let res: { ok: boolean; error?: string } = { ok: false, error: 'unknown_event' };
   switch (msg.event) {
     case 'startGame': res = g.start(playerId); break;
@@ -147,6 +211,9 @@ const onMessage = (room: Room, ws: WebSocket, raw: string) => {
   }
   ack(res.ok, { error: res.error });
   broadcast(room);
+  // After any human action (e.g. endTurn), the next turn may belong to a bot —
+  // auto-play it (and any following bot turns) until control returns to a human.
+  maybeRunBots(room, broadcast);
 };
 
 /** Attach the game WebSocket server to an existing HTTP server. Handles

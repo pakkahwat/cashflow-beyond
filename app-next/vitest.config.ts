@@ -9,6 +9,9 @@ export default defineConfig({
   },
   test: {
     include: ['engine/**/*.test.ts', 'data/**/*.test.ts', 'lib/**/*.test.ts'],
-    environment: 'node'
+    environment: 'node',
+    // Bots auto-play `BOT_DELAY_MS` apart; speed that up so the integration
+    // tests don't wait ~700 ms per bot action. Read at module load in botRunner.
+    env: { BOT_DELAY_MS: '10' }
   }
 });

@@ -105,6 +105,101 @@ describe('game websocket protocol', () => {
   });
 });
 
+describe('bot mode (createBotGame / auto-play)', () => {
+  const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  it('createBotGame starts a game with the human + N bots and auto-plays the bot turn', async () => {
+    const code = 'BOTG1';
+    const a = connect(code);
+    await a.readyP;
+    // Human joins (creates the room) — bots are added server-side.
+    const join = await a.emit('join', { playerId: 'human:1', username: 'Human', intent: 'create' });
+    expect(join.ok).toBe(true);
+
+    const createAck = await a.emit('createBotGame', { count: 1 });
+    expect(createAck.ok).toBe(true);
+
+    // Room now has the human + 1 bot, started, and is flagged as a bot game.
+    const room = rooms.get(code)!;
+    expect(room.bots?.size).toBe(1);
+    expect(room.vsBots).toBe(true);
+    expect(room.game.players.length).toBe(2);
+    expect(room.game.status).toBe('started');
+
+    // The bot must take its turn automatically (BOT_DELAY_MS=10 in tests) so the
+    // game progresses without a second human. Drive the human if it leads, then
+    // confirm the bot acts and control returns to the human.
+    const botId = [...room.bots!][0];
+
+    // If the human is first, pick a dream and end the turn so it becomes the bot's.
+    const giveUpHumanTurn = async () => {
+      const s = room.game.getState();
+      if (s.currentPlayerId !== 'human:1') return;
+      if (s.awaitingDreamChoice.includes('human:1')) {
+        await a.emit('chooseDream', { dreamId: 'orphanage' });
+      }
+      if (!room.game.getState().hasRolled) await a.emit('rollDice', { diceCount: 1 });
+      // Resolve a possible pending card/deal minimally so endTurn is allowed.
+      let guard = 0;
+      while (guard++ < 10) {
+        const st = room.game.getState();
+        if (st.awaitingDealChoice) { await a.emit('chooseDeal', { size: 'small' }); continue; }
+        if (st.pendingCard) { await a.emit('cardAction', { action: 'skip' }); continue; }
+        if (st.pendingFastTrackTile) { await a.emit('fastTrackAction', { action: 'skip' }); continue; }
+        if (room.game.players.find((pl) => pl.id === 'human:1')!.cash < 0) { await a.emit('liquidate', {}); continue; }
+        break;
+      }
+      await a.emit('endTurn', {});
+    };
+
+    await giveUpHumanTurn();
+
+    // Now wait for the bot's auto-play loop to run and hand control back.
+    let cycledBack = false;
+    for (let i = 0; i < 60; i++) {
+      await wait(30);
+      const cur = room.game.getState().currentPlayerId;
+      if (cur === 'human:1' && room.game.players.find((pl) => pl.id === botId)!.position >= 0) {
+        // Control is back on the human and the bot had a chance to act.
+        // Confirm the bot actually acted: it chose a dream (dream choice fires at
+        // start) OR it advanced its board position / fast-track at least once.
+        const bot = room.game.players.find((pl) => pl.id === botId)!;
+        if (bot.dreamId || bot.position > 0 || bot.phase === 'fastTrack' || room.game.status === 'finished') {
+          cycledBack = true;
+          break;
+        }
+      }
+      if (room.game.status === 'finished') { cycledBack = true; break; }
+    }
+    expect(cycledBack).toBe(true);
+
+    // The bot ended up with a dream (its policy resolves the start-of-game prompt).
+    const bot = room.game.players.find((pl) => pl.id === botId)!;
+    expect(bot.dreamId).toBeTruthy();
+
+    a.close();
+    rooms.delete(code); // stop any lingering bot auto-play loop for this room
+  });
+
+  it('addBot adds one bot to the lobby (host only) without starting', async () => {
+    const code = 'BOTL1';
+    const a = connect(code);
+    await a.readyP;
+    await a.emit('join', { playerId: 'host:1', username: 'Host', intent: 'create' });
+
+    const ack = await a.emit('addBot', {});
+    expect(ack.ok).toBe(true);
+
+    const room = rooms.get(code)!;
+    expect(room.bots?.size).toBe(1);
+    expect(room.vsBots).toBe(true);
+    expect(room.game.status).toBe('lobby');
+    expect(room.game.players.length).toBe(2);
+
+    a.close();
+  });
+});
+
 describe('room eviction', () => {
   it('(Finding 1) pre-join connection: room is deleted when socket closes before join', async () => {
     const code = 'LEAK1';
