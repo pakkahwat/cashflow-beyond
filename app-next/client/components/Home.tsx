@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { createRoom, joinRoom } from '../lib/socket';
+import { createRoom, joinRoom, createBotGame } from '../lib/socket';
 import { useGame } from '../store/gameStore';
 
 export default function Home() {
@@ -10,6 +10,7 @@ export default function Home() {
   const [name, setName] = useState('');
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
+  const [botCount, setBotCount] = useState(1);
 
   const create = async () => {
     if (!name.trim()) return setError('name_required');
@@ -25,6 +26,15 @@ export default function Home() {
     if (!code.trim()) return setError('room_not_found');
     setBusy(true);
     const res = await joinRoom(code.trim().toUpperCase(), name.trim());
+    setBusy(false);
+    if (!res.ok) return setError(res.error || 'generic');
+    if (res.roomId) setRoom(res.roomId);
+  };
+
+  const playVsBots = async () => {
+    if (!name.trim()) return setError('name_required');
+    setBusy(true);
+    const res = await createBotGame(name.trim(), botCount);
     setBusy(false);
     if (!res.ok) return setError(res.error || 'generic');
     if (res.roomId) setRoom(res.roomId);
@@ -63,6 +73,27 @@ export default function Home() {
           <button className="btn" disabled={busy} onClick={join}>
             {t('home.join')}
           </button>
+        </div>
+
+        <div className="divider"><span>{t('home.or')}</span></div>
+
+        <div className="bot-row">
+          <button className="btn primary big bot-play-btn" disabled={busy} onClick={playVsBots}>
+            {t('home.playVsBots')}
+          </button>
+          <div className="bot-count-selector">
+            <span className="bot-count-label">{t('home.botCount')}</span>
+            {[1, 2, 3].map((n) => (
+              <button
+                key={n}
+                className={`btn small${botCount === n ? ' primary' : ''}`}
+                disabled={busy}
+                onClick={() => setBotCount(n)}
+              >
+                {n}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
     </div>

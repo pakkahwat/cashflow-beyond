@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { emit, leaveRoom } from '../lib/socket';
+import { emit, leaveRoom, addBot } from '../lib/socket';
 import { useGame, myPlayer } from '../store/gameStore';
 
 export default function Lobby() {
@@ -32,6 +32,10 @@ export default function Lobby() {
     navigator.clipboard?.writeText(state.roomId);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
+  };
+  const handleAddBot = async () => {
+    const res = await addBot();
+    if (!res.ok) setError(res.error || 'generic');
   };
 
   return (
@@ -79,6 +83,12 @@ export default function Lobby() {
         </div>
         {difficulty === 'easy' && <p className="hint">{t('lobby.easyHint')}</p>}
       </div>
+
+      {isHost && (
+        <button className="btn add-bot-btn" onClick={handleAddBot}>
+          {t('lobby.addBot')}
+        </button>
+      )}
 
       {isHost ? (
         <button className="btn primary big" onClick={start}>

@@ -12,7 +12,9 @@
     "roomCodePlaceholder": "Room code (e.g. AB3KД)",
     "join": "Join",
     "or": "or",
-    "howToPlay": "How to play"
+    "howToPlay": "How to play",
+    "playVsBots": "Play vs Bots",
+    "botCount": "Bots:"
   },
   "lobby": {
     "title": "Game Lobby",
@@ -29,7 +31,8 @@
     "difficulty": "Difficulty",
     "normal": "Normal",
     "easy": "Easy",
-    "easyHint": "Lighter penalties, faster cash flow, bigger starting bankroll"
+    "easyHint": "Lighter penalties, faster cash flow, bigger starting bankroll",
+    "addBot": "Add bot"
   },
   "game": {
     "yourTurn": "Your turn",

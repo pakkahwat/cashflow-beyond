@@ -177,3 +177,26 @@ export const fetchBoard = async (): Promise<{ dreams: any[]; fastTrack: any[] }>
   const res = await fetch(`${apiBase}/api/board`);
   return res.json();
 };
+
+/**
+ * Create a room, join it as host, then emit `createBotGame` to add N bots and
+ * start immediately. Mirrors the `createRoom` flow for connection/token handling.
+ */
+export const createBotGame = async (username: string, count: number): Promise<Ack> => {
+  const res = await fetch(`${apiBase}/api/room`, { method: 'POST' });
+  const { roomId } = await res.json();
+  await connect(roomId);
+  // First join as the human host (identical to createRoom).
+  const joinAck = await emit('join', { intent: 'create', playerId, username });
+  if (!joinAck.ok) return joinAck;
+  remember(joinAck.roomId || roomId, username);
+  // Then issue createBotGame which adds bots + starts the game server-side.
+  const botAck = await emit('createBotGame', { count });
+  return { ...botAck, roomId: joinAck.roomId || roomId };
+};
+
+/**
+ * Emit `addBot` from the lobby (host only). The server adds one bot player and
+ * broadcasts the updated state.
+ */
+export const addBot = (): Promise<Ack> => emit('addBot');
