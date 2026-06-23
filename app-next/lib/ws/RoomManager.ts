@@ -12,6 +12,10 @@ export interface Room {
   vsBots?: boolean;
   /** Active per-turn bot auto-play loop guard (prevents overlapping schedulers). */
   botRunning?: boolean;
+  /** Unix ms when the game transitioned from lobby → active. Set on startGame. */
+  startedAt?: number;
+  /** True once the finished-game stats have been written to MongoDB (idempotency guard). */
+  recorded?: boolean;
 }
 
 /** In-memory registry of active rooms. One process owns all rooms; nothing is

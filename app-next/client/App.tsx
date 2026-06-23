@@ -1,4 +1,5 @@
 'use client';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useGame } from './store/gameStore';
 import LangToggle from './components/LangToggle';
@@ -7,12 +8,14 @@ import Home from './components/Home';
 import Lobby from './components/Lobby';
 import Game from './components/Game';
 import AuthGate from './components/AuthGate';
+import Profile from './components/Profile';
 
 export default function App() {
   const { t } = useTranslation();
   const screen = useGame((s) => s.screen);
   const resuming = useGame((s) => s.resuming);
   const hasState = useGame((s) => !!s.state);
+  const [showProfile, setShowProfile] = useState(false);
 
   const showResume = resuming && !hasState;
 
@@ -26,9 +29,11 @@ export default function App() {
             <div className="spinner" />
             <p>{t('game.reconnecting')}</p>
           </div>
+        ) : showProfile ? (
+          <Profile onBack={() => setShowProfile(false)} />
         ) : (
           <>
-            {screen === 'home' && <Home />}
+            {screen === 'home' && <Home onProfile={() => setShowProfile(true)} />}
             {screen === 'lobby' && <Lobby />}
             {screen === 'game' && <Game />}
           </>

@@ -34,6 +34,7 @@ export interface MatchDoc {
   winnerUid: string | null;
   startedAt: number;
   endedAt: number;
+  vsBots: boolean;
   players: MatchPlayerEntry[];
 }
 
@@ -64,7 +65,8 @@ export function buildMatch(
   roomCode: string,
   finalState: PublicGameState,
   startedAt: number,
-  endedAt: number
+  endedAt: number,
+  vsBots = false
 ): BuildMatchResult {
   const { winnerId, players } = finalState;
 
@@ -90,6 +92,7 @@ export function buildMatch(
     winnerUid: winnerId,
     startedAt,
     endedAt,
+    vsBots,
     players: matchPlayers
   };
 
@@ -125,12 +128,13 @@ export interface RecordMatchDeps {
   finalState: PublicGameState;
   startedAt: number;
   endedAt: number;
+  vsBots?: boolean;
 }
 
 export async function recordMatch(deps: RecordMatchDeps): Promise<void> {
-  const { matchesCol, usersCol, roomCode, finalState, startedAt, endedAt } = deps;
+  const { matchesCol, usersCol, roomCode, finalState, startedAt, endedAt, vsBots = false } = deps;
 
-  const { matchDoc, userDeltas } = buildMatch(roomCode, finalState, startedAt, endedAt);
+  const { matchDoc, userDeltas } = buildMatch(roomCode, finalState, startedAt, endedAt, vsBots);
 
   await matchesCol.insertOne(matchDoc);
 

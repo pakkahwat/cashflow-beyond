@@ -3,7 +3,11 @@ import { useTranslation } from 'react-i18next';
 import { createRoom, joinRoom, createBotGame } from '../lib/socket';
 import { useGame } from '../store/gameStore';
 
-export default function Home() {
+interface Props {
+  onProfile: () => void;
+}
+
+export default function Home({ onProfile }: Props) {
   const { t } = useTranslation();
   const setError = useGame((s) => s.setError);
   const setRoom = useGame((s) => s.setRoom);
@@ -46,6 +50,13 @@ export default function Home() {
         <h1 className="logo">{t('app.title')}</h1>
         <p className="subtitle">{t('app.subtitle')}</p>
         <p className="tagline">{t('app.tagline')}</p>
+        <button
+          className="btn small ghost"
+          onClick={onProfile}
+          style={{ marginTop: '0.5rem', fontSize: '0.85rem', opacity: 0.75 }}
+        >
+          {t('home.profile', 'My Profile')}
+        </button>
       </div>
 
       <div className="card-panel">

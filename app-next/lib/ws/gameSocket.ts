@@ -4,6 +4,8 @@ import type { Liabilities } from '../../engine/types.js';
 import { rooms, type Room } from './RoomManager.js';
 import { maybeRunBots } from './botRunner.js';
 import { verifyToken } from '../auth/verifyToken.js';
+import { getDb } from '../mongo.js';
+import { recordMatch } from '../stats.js';
 
 /** Add `count` (1–3) server-driven bots to a room and flag it as a bot game.
  *  Bots are normal Game players with synthetic ids (`bot:1..N`); they never
@@ -195,6 +197,7 @@ const onMessage = (room: Room, ws: WebSocket, raw: string) => {
     }
     addBots(room, Number(p.count) || 1);
     const startRes = g.start(playerId);
+    if (startRes.ok) room.startedAt = Date.now();
     ack(startRes.ok, { error: startRes.error });
     broadcast(room);
     if (startRes.ok) maybeRunBots(room, broadcast);
@@ -203,7 +206,11 @@ const onMessage = (room: Room, ws: WebSocket, raw: string) => {
 
   let res: { ok: boolean; error?: string } = { ok: false, error: 'unknown_event' };
   switch (msg.event) {
-    case 'startGame': res = g.start(playerId); break;
+    case 'startGame': {
+      res = g.start(playerId);
+      if (res.ok) room.startedAt = Date.now();
+      break;
+    }
     case 'setDifficulty': res = g.setDifficulty(playerId, p.difficulty === 'easy' ? 'easy' : 'normal'); break;
     case 'rollDice': res = g.rollDice(playerId, Number(p.diceCount) || 1); break;
     case 'chooseDeal': res = g.chooseDeal(playerId, p.size); break;
@@ -218,6 +225,30 @@ const onMessage = (room: Room, ws: WebSocket, raw: string) => {
   }
   ack(res.ok, { error: res.error });
   broadcast(room);
+
+  // Game-end hook: write stats exactly once when the game finishes.
+  // Errors are caught+logged; never throw into the event loop.
+  const finalState = g.getState();
+  if (finalState.status === 'finished' && !room.recorded) {
+    room.recorded = true;
+    const startedAt = room.startedAt ?? Date.now();
+    const endedAt = Date.now();
+    const vsBots = (room.bots?.size ?? 0) > 0;
+    getDb()
+      .then(async (db) => {
+        await recordMatch({
+          matchesCol: db.collection('matches'),
+          usersCol: db.collection('users'),
+          roomCode: room.code,
+          finalState,
+          startedAt,
+          endedAt,
+          vsBots,
+        });
+      })
+      .catch((e) => console.error('recordMatch error:', e));
+  }
+
   // After any human action (e.g. endTurn), the next turn may belong to a bot —
   // auto-play it (and any following bot turns) until control returns to a human.
   maybeRunBots(room, broadcast);
