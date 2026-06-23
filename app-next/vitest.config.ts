@@ -8,7 +8,7 @@ export default defineConfig({
     alias: [{ find: /^(\.{1,2}\/.*)\.js$/, replacement: '$1' }]
   },
   test: {
-    include: ['engine/**/*.test.ts', 'data/**/*.test.ts', 'lib/**/*.test.ts'],
+    include: ['engine/**/*.test.ts', 'data/**/*.test.ts', 'lib/**/*.test.ts', 'client/**/*.test.ts', 'client/**/*.test.tsx'],
     environment: 'node',
     // Bots auto-play `BOT_DELAY_MS` apart; speed that up so the integration
     // tests don't wait ~700 ms per bot action. Read at module load in botRunner.

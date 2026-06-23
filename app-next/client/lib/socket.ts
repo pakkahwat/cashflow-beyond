@@ -1,6 +1,10 @@
-// Native WebSocket transport for the Cloudflare Worker + Durable Object backend.
-// Uses a stable, client-owned playerId persisted in localStorage so a player
-// can reclaim their seat after a refresh (the game itself is saved in the DO).
+// Native WebSocket transport for the Next.js game backend.
+// Identity is Firebase-authoritative: playerId = Firebase uid, username from
+// Google displayName, and a fresh idToken is attached to every join/resume.
+// A localStorage UUID is kept only as a pre-auth fallback (should never reach
+// the server once the user is signed in, because the join is blocked by AuthGate).
+
+import { auth, getIdToken } from './firebase';
 
 export interface Ack {
   ok: boolean;
@@ -26,13 +30,21 @@ const LS = {
 const uuid = (): string =>
   (crypto as any).randomUUID?.() ?? Math.random().toString(36).slice(2) + Date.now().toString(36);
 
-const playerId: string = (() => {
+/** Get the current player's Firebase uid, falling back to a localStorage uuid. */
+const getPlayerId = (): string => {
+  if (auth.currentUser?.uid) return auth.currentUser.uid;
   const existing = localStorage.getItem(LS.pid);
   if (existing) return existing;
   const id = uuid();
   localStorage.setItem(LS.pid, id);
   return id;
-})();
+};
+
+/** Get the current player's display name (Google displayName → stored name → 'Player'). */
+const getUsername = (): string =>
+  auth.currentUser?.displayName ||
+  localStorage.getItem(LS.name) ||
+  'Player';
 
 let ws: WebSocket | null = null;
 const pending = new Map<string, (a: Ack) => void>();
@@ -44,9 +56,9 @@ export const onState = (cb: (s: any) => void) => {
 };
 export const onId = (cb: (id: string) => void) => {
   idCb = cb;
-  cb(playerId);
+  cb(getPlayerId());
 };
-export const getMyId = () => playerId;
+export const getMyId = () => getPlayerId();
 export const savedRoom = () => localStorage.getItem(LS.room);
 
 let reconnectAttempts = 0;
@@ -56,7 +68,6 @@ let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
  *  intentional leave (forget() clears LS.room). */
 const scheduleReconnect = () => {
   const roomId = localStorage.getItem(LS.room);
-  const name = localStorage.getItem(LS.name) || 'Player';
   if (!roomId || reconnectTimer) return;
   const delay = Math.min(10000, 500 * 2 ** reconnectAttempts);
   reconnectTimer = setTimeout(async () => {
@@ -64,7 +75,8 @@ const scheduleReconnect = () => {
     reconnectAttempts += 1;
     try {
       await connect(roomId);
-      await emit('join', { intent: 'resume', playerId, username: name });
+      const idToken = await getIdToken();
+      await emit('join', { intent: 'resume', playerId: getPlayerId(), username: getUsername(), ...(idToken ? { idToken } : {}) });
       reconnectAttempts = 0;
     } catch {
       scheduleReconnect();
@@ -130,10 +142,15 @@ const forget = () => {
 };
 
 export const createRoom = async (username: string): Promise<Ack> => {
-  const res = await fetch(`${apiBase}/api/room`, { method: 'POST' });
+  const idToken = await getIdToken();
+  const res = await fetch(`${apiBase}/api/room`, {
+    method: 'POST',
+    headers: idToken ? { Authorization: `Bearer ${idToken}` } : {},
+  });
   const { roomId } = await res.json();
   await connect(roomId);
-  const ack = await emit('join', { intent: 'create', playerId, username });
+  const playerId = getPlayerId();
+  const ack = await emit('join', { intent: 'create', playerId, username, ...(idToken ? { idToken } : {}) });
   if (ack.ok) remember(ack.roomId || roomId, username);
   return ack;
 };
@@ -144,7 +161,9 @@ export const joinRoom = async (roomId: string, username: string): Promise<Ack> =
   } catch {
     return { ok: false, error: 'room_not_found' };
   }
-  const ack = await emit('join', { intent: 'join', playerId, username });
+  const idToken = await getIdToken();
+  const playerId = getPlayerId();
+  const ack = await emit('join', { intent: 'join', playerId, username, ...(idToken ? { idToken } : {}) });
   if (ack.ok) remember(ack.roomId || roomId, username);
   return ack;
 };
@@ -152,7 +171,7 @@ export const joinRoom = async (roomId: string, username: string): Promise<Ack> =
 /** Re-join a saved game after a refresh. Returns false if nothing to resume. */
 export const resume = async (): Promise<Ack | null> => {
   const roomId = localStorage.getItem(LS.room);
-  const name = localStorage.getItem(LS.name) || 'Player';
+  const name = getUsername();
   if (!roomId) return null;
   try {
     await connect(roomId);
@@ -160,7 +179,9 @@ export const resume = async (): Promise<Ack | null> => {
     forget();
     return { ok: false, error: 'room_not_found' };
   }
-  const ack = await emit('join', { intent: 'resume', playerId, username: name });
+  const idToken = await getIdToken();
+  const playerId = getPlayerId();
+  const ack = await emit('join', { intent: 'resume', playerId, username: name, ...(idToken ? { idToken } : {}) });
   if (!ack.ok) forget();
   return ack;
 };
@@ -183,11 +204,16 @@ export const fetchBoard = async (): Promise<{ dreams: any[]; fastTrack: any[] }>
  * start immediately. Mirrors the `createRoom` flow for connection/token handling.
  */
 export const createBotGame = async (username: string, count: number): Promise<Ack> => {
-  const res = await fetch(`${apiBase}/api/room`, { method: 'POST' });
+  const idToken = await getIdToken();
+  const res = await fetch(`${apiBase}/api/room`, {
+    method: 'POST',
+    headers: idToken ? { Authorization: `Bearer ${idToken}` } : {},
+  });
   const { roomId } = await res.json();
   await connect(roomId);
+  const playerId = getPlayerId();
   // First join as the human host (identical to createRoom).
-  const joinAck = await emit('join', { intent: 'create', playerId, username });
+  const joinAck = await emit('join', { intent: 'create', playerId, username, ...(idToken ? { idToken } : {}) });
   if (!joinAck.ok) return joinAck;
   remember(joinAck.roomId || roomId, username);
   // Then issue createBotGame which adds bots + starts the game server-side.

@@ -6,6 +6,7 @@ import Toast from './components/Toast';
 import Home from './components/Home';
 import Lobby from './components/Lobby';
 import Game from './components/Game';
+import AuthGate from './components/AuthGate';
 
 export default function App() {
   const { t } = useTranslation();
@@ -16,22 +17,24 @@ export default function App() {
   const showResume = resuming && !hasState;
 
   return (
-    <div className="app">
-      <LangToggle />
-      {showResume ? (
-        <div className="screen resume-splash">
-          <div className="logo">CA$HRICH</div>
-          <div className="spinner" />
-          <p>{t('game.reconnecting')}</p>
-        </div>
-      ) : (
-        <>
-          {screen === 'home' && <Home />}
-          {screen === 'lobby' && <Lobby />}
-          {screen === 'game' && <Game />}
-        </>
-      )}
-      <Toast />
-    </div>
+    <AuthGate>
+      <div className="app">
+        <LangToggle />
+        {showResume ? (
+          <div className="screen resume-splash">
+            <div className="logo">CA$HRICH</div>
+            <div className="spinner" />
+            <p>{t('game.reconnecting')}</p>
+          </div>
+        ) : (
+          <>
+            {screen === 'home' && <Home />}
+            {screen === 'lobby' && <Lobby />}
+            {screen === 'game' && <Game />}
+          </>
+        )}
+        <Toast />
+      </div>
+    </AuthGate>
   );
 }
