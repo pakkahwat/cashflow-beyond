@@ -1,0 +1,756 @@
+import professionsData from '../data/professions.json';
+import { Player } from './Player.js';
+import { Decks } from './decks.js';
+import { RAT_RACE_SIZE, ratRaceTileTypeFor, tilesCrossed } from './board.js';
+import {
+  DREAMS,
+  FAST_TRACK_BOARD,
+  FAST_TRACK_SIZE,
+  FAST_TRACK_CASHFLOW_GOAL
+} from '../data/fastTrack.js';
+import type {
+  Card,
+  Profession,
+  PublicGameState,
+  GamePhaseStatus,
+  DeckName,
+  Liabilities
+} from './types.js';
+
+const PROFESSIONS = professionsData as unknown as Profession[];
+const COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22'];
+
+const shuffle = <T>(arr: T[]): T[] => {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+};
+
+const rollDie = () => Math.floor(Math.random() * 6) + 1;
+
+export interface ActionResult {
+  ok: boolean;
+  error?: string;
+}
+const ok = (): ActionResult => ({ ok: true });
+const fail = (error: string): ActionResult => ({ ok: false, error });
+
+export type Difficulty = 'normal' | 'easy';
+
+export class Game {
+  roomId: string;
+  status: GamePhaseStatus = 'lobby';
+  players: Player[] = [];
+  difficulty: Difficulty = 'normal';
+  private decks = new Decks();
+
+  private currentIndex = 0;
+  private diceValues: number[] = [];
+  private hasRolled = false;
+  private resolved = false; // current player may end the turn
+  private pendingCard: Card | null = null;
+  private awaitingDealChoice = false;
+  private pendingFastTrackTile: ReturnType<() => (typeof FAST_TRACK_BOARD)[number]> | null = null;
+  private logs: { ts: number; player: string; color: string; code: string; params: Record<string, unknown> }[] = [];
+  private winnerId: string | null = null;
+  private dreamMarkers: Record<string, number> = {};
+
+  constructor(roomId: string) {
+    this.roomId = roomId;
+  }
+
+  // ---------- Lobby ----------
+
+  addPlayer(id: string, username: string): ActionResult {
+    if (this.status !== 'lobby') return fail('game_already_started');
+    if (this.players.length >= 6) return fail('room_full');
+    if (this.players.some((p) => p.username === username)) return fail('name_taken');
+    const isHost = this.players.length === 0;
+    const color = COLORS[this.players.length % COLORS.length];
+    // profession assigned at start; use a placeholder clone now
+    const profession = PROFESSIONS[this.players.length % PROFESSIONS.length];
+    this.players.push(new Player(id, username, color, isHost, profession));
+    return ok();
+  }
+
+  reconnect(oldId: string, newId: string): boolean {
+    const p = this.players.find((pl) => pl.id === oldId);
+    if (!p) return false;
+    if (this.currentPlayer?.id === oldId) this.currentIndexById(newId);
+    p.id = newId;
+    p.connected = true;
+    return true;
+  }
+
+  private currentIndexById(_id: string) {
+    /* index unchanged; id updated in place */
+  }
+
+  setConnected(id: string, connected: boolean) {
+    const p = this.players.find((pl) => pl.id === id);
+    if (p) p.connected = connected;
+  }
+
+  removePlayer(id: string): void {
+    if (this.status === 'lobby') {
+      this.players = this.players.filter((p) => p.id !== id);
+      if (this.players.length && !this.players.some((p) => p.isHost)) {
+        this.players[0].isHost = true;
+      }
+    } else {
+      this.setConnected(id, false);
+    }
+  }
+
+  get host(): Player | undefined {
+    return this.players.find((p) => p.isHost);
+  }
+
+  // ---------- Start ----------
+
+  setDifficulty(byId: string, difficulty: 'normal' | 'easy'): ActionResult {
+    if (this.status !== 'lobby') return fail('game_already_started');
+    const host = this.host;
+    if (!host || host.id !== byId) return fail('only_host_can_start');
+    this.difficulty = difficulty;
+    return ok();
+  }
+
+  start(byId: string): ActionResult {
+    const host = this.host;
+    if (!host || host.id !== byId) return fail('only_host_can_start');
+    if (this.players.length < 2) return fail('need_players');
+    // assign unique professions + colors fresh
+    const profs = shuffle(PROFESSIONS).slice(0, this.players.length);
+    const months = this.difficulty === 'easy' ? 2 : 1;
+    this.players.forEach((p, i) => {
+      const fresh = new Player(p.id, p.username, COLORS[i % COLORS.length], p.isHost, profs[i]);
+      // Official setup: distribute one Monthly Cash Flow + Savings, then erase Savings.
+      // Easy mode front-loads an extra month so thin bankrolls can survive bad luck.
+      fresh.cash = fresh.cashFlow * months + fresh.assets.savings;
+      fresh.assets.savings = 0;
+      this.players[i] = fresh;
+    });
+    this.status = 'started';
+    this.currentIndex = Math.floor(Math.random() * this.players.length); // highest-roll-goes-first ≈ random
+    this.beginTurn();
+    this.log(this.currentPlayer, 'started');
+    return ok();
+  }
+
+  // ---------- Turn lifecycle ----------
+
+  get currentPlayer(): Player {
+    return this.players[this.currentIndex];
+  }
+
+  private isCurrent(id: string): boolean {
+    return this.currentPlayer?.id === id;
+  }
+
+  private beginTurn(): void {
+    this.hasRolled = false;
+    this.resolved = false;
+    this.pendingCard = null;
+    this.awaitingDealChoice = false;
+    this.pendingFastTrackTile = null;
+    this.diceValues = [];
+
+    const p = this.currentPlayer;
+    if (p.isBankrupt) {
+      this.advanceTurn();
+      return;
+    }
+    if (p.skippedTurns > 0) {
+      p.skippedTurns -= 1;
+      this.log(p, 'skippedTurn');
+      this.advanceTurn();
+    }
+  }
+
+  private advanceTurn(): void {
+    if (this.status === 'finished') return;
+    const active = this.players.filter((p) => !p.isBankrupt);
+    if (active.length === 0) {
+      this.status = 'finished';
+      return;
+    }
+    let guard = 0;
+    do {
+      this.currentIndex = (this.currentIndex + 1) % this.players.length;
+      guard += 1;
+    } while (this.currentPlayer.isBankrupt && guard <= this.players.length);
+    this.beginTurn();
+  }
+
+  endTurn(id: string): ActionResult {
+    if (!this.isCurrent(id)) return fail('not_your_turn');
+    if (!this.hasRolled) return fail('must_roll_first');
+    if (!this.resolved) return fail('resolve_card_first');
+    if (this.currentPlayer.needsRescue()) return fail('must_resolve_debt');
+    this.advanceTurn();
+    return ok();
+  }
+
+  // ---------- Rolling ----------
+
+  rollDice(id: string, diceCount = 1): ActionResult {
+    if (this.status !== 'started') return fail('game_not_started');
+    if (!this.isCurrent(id)) return fail('not_your_turn');
+    if (this.hasRolled) return fail('already_rolled');
+    const p = this.currentPlayer;
+
+    let count = 1;
+    if (p.phase === 'fastTrack') {
+      count = p.ftCharityDice ? Math.min(3, Math.max(1, diceCount || 2)) : 2;
+    } else if (p.extraDiceTurns > 0) {
+      count = diceCount === 2 ? 2 : 1;
+    }
+
+    this.diceValues = Array.from({ length: count }, rollDie);
+    const steps = this.diceValues.reduce((s, v) => s + v, 0);
+    this.hasRolled = true;
+    this.log(p, 'rolled', { dice: this.diceValues, total: steps });
+
+    if (p.extraDiceTurns > 0) p.extraDiceTurns -= 1;
+
+    if (p.phase === 'fastTrack') {
+      this.resolveFastTrackLanding(steps);
+    } else {
+      this.resolveRatRaceLanding(steps);
+    }
+    return ok();
+  }
+
+  // ---------- Rat Race landing ----------
+
+  private resolveRatRaceLanding(steps: number): void {
+    const p = this.currentPlayer;
+    const from = p.position;
+    p.move(steps);
+
+    // Pay payday for every payday tile crossed (including a landing).
+    tilesCrossed(from, p.position, steps).forEach((pos) => {
+      if (ratRaceTileTypeFor(pos, this.difficulty) === 'payday') {
+        const amount = p.payday();
+        this.log(p, 'payday', { amount });
+      }
+    });
+
+    const tile = ratRaceTileTypeFor(p.position, this.difficulty);
+    switch (tile) {
+      case 'payday':
+        this.resolved = true;
+        break;
+      case 'deal':
+        this.awaitingDealChoice = true;
+        this.log(p, 'dealLanded');
+        break;
+      case 'market':
+        this.pendingCard = this.decks.draw('market');
+        this.log(p, 'market', { heading: this.pendingCard.heading ?? '' });
+        this.autoResolveMarket();
+        break;
+      case 'doodad': {
+        const card = this.decks.draw('doodad');
+        this.pendingCard = card;
+        const result = p.doodad(card, this.difficulty);
+        if (result === 'skip') this.log(p, 'doodadDodged', { heading: card.heading });
+        else if (result === 'ok') {
+          this.log(p, 'doodadPaid', { cost: card.cost ?? 0, heading: card.heading });
+        } else {
+          this.log(p, 'doodadCapped', { paid: result.paid, cost: card.cost ?? 0, heading: card.heading });
+        }
+        this.pendingCard = null;
+        this.resolved = true;
+        break;
+      }
+      case 'charity':
+        this.pendingCard = this.decks.draw('charity');
+        this.log(p, 'charityLanded');
+        break;
+      case 'downsized': {
+        this.pendingCard = this.decks.draw('downsized');
+        const amount = p.downsized(this.difficulty);
+        const turns = this.difficulty === 'easy' ? 1 : 2;
+        this.log(p, 'downsized', { amount, turns });
+        this.pendingCard = null;
+        this.resolved = true;
+        break;
+      }
+      case 'baby': {
+        this.pendingCard = this.decks.draw('baby');
+        const added = p.baby();
+        this.log(p, 'baby', { added });
+        this.pendingCard = null;
+        this.resolved = true;
+        break;
+      }
+      default:
+        this.resolved = true;
+    }
+    /* Fast Track entry is a player choice now (M5) */
+  }
+
+  private autoResolveMarket(): void {
+    const p = this.currentPlayer;
+    const card = this.pendingCard;
+    if (!card) return;
+    if (card.type === 'damage') {
+      const res = p.payDamages(card);
+      if (res === 'noRealEstate') {
+        this.log(p, 'damageIgnored');
+      } else if (res === 'paid') {
+        this.log(p, 'damagePaid', { cost: card.cost ?? 0 });
+      } else {
+        // Mandatory damage the player cannot afford: force the debit and let
+        // needsRescue() require them to resolve the debt before ending the turn.
+        p.forcePay(card.cost ?? 0, card.heading ?? 'Property damage');
+        this.log(p, 'damageExceeds', { cost: card.cost ?? 0 });
+      }
+      this.pendingCard = null;
+      this.resolved = true;
+      return;
+    }
+    // goldCoins / realEstate / lottery market cards offer an optional sale —
+    // keep the card pending so the player can choose to sell or skip.
+    this.resolved = false;
+  }
+
+  // ---------- Deal choice ----------
+
+  chooseDeal(id: string, size: 'small' | 'big'): ActionResult {
+    if (!this.isCurrent(id)) return fail('not_your_turn');
+    if (!this.awaitingDealChoice) return fail('no_deal_choice');
+    const deck: DeckName = size === 'small' ? 'smallDeal' : 'bigDeal';
+    this.pendingCard = this.decks.draw(deck);
+    this.awaitingDealChoice = false;
+    this.log(this.currentPlayer, 'drewDeal', { size, heading: this.pendingCard.heading ?? '' });
+    return ok();
+  }
+
+  // ---------- Card actions ----------
+
+  cardAction(id: string, action: string, payload: any = {}): ActionResult {
+    const card = this.pendingCard;
+    if (!card) return fail('no_pending_card');
+
+    // A pending market sale card (stock/gold/RE) is an event for EVERYONE who holds
+    // the matching asset: they may sell at the drawn price even out of turn (M6).
+    // Only the current player may buy, skip, or otherwise resolve the card.
+    // (applicableToEveryOne cards like damages remain drawer-only per their data.)
+    if (!this.isCurrent(id)) {
+      if (
+        (action === 'sellStocks' && card.type === 'stock') ||
+        (action === 'sellGold' && card.type === 'goldCoins') ||
+        (action === 'sellRealEstate' && (card.value !== undefined || !!card.plus)) ||
+        !!card.applicableToEveryOne
+      ) {
+        const seller = this.players.find((pl) => pl.id === id);
+        if (!seller || seller.isBankrupt) return fail('no_player');
+        if (action === 'sellStocks') {
+          const count = Number(payload.count) || 0;
+          if (!seller.sellStocks(card, count)) return fail('cannot_sell');
+          this.log(seller, 'soldStock', { symbol: card.symbol, count, price: card.price });
+          return ok();
+        }
+        if (action === 'sellGold') {
+          const count = Number(payload.count) || 0;
+          if (!seller.sellGold(card, count)) return fail('cannot_sell');
+          this.log(seller, 'soldGold', { count });
+          return ok();
+        }
+        if (action === 'sellRealEstate') {
+          const assetId = String(payload.assetId);
+          if (!seller.sellRealEstate(card, assetId)) return fail('cannot_sell');
+          this.log(seller, 'soldRE');
+          return ok();
+        }
+      }
+      return fail('not_your_turn');
+    }
+
+    const p = this.currentPlayer;
+
+    switch (action) {
+      case 'skip':
+        this.log(p, 'passed', { heading: card.heading ?? card.type });
+        this.pendingCard = null;
+        this.resolved = true;
+        return ok();
+
+      case 'donate': {
+        if (card.type !== 'charity') return fail('not_charity');
+        if (!p.charity()) return fail('insufficient_cash');
+        this.log(p, 'donated');
+        this.pendingCard = null;
+        this.resolved = true;
+        return ok();
+      }
+
+      case 'buyRealEstate': {
+        if (card.type !== 'realEstate') return fail('not_real_estate');
+        if (!p.buyRealEstate(card)) return fail('insufficient_cash');
+        this.log(p, 'boughtRE', { symbol: card.symbol, cashFlow: card.cashFlow ?? 0 });
+        this.pendingCard = null;
+        this.resolved = true;
+        /* Fast Track entry is a player choice now (M5) */
+        return ok();
+      }
+
+      case 'buyBusiness': {
+        if (card.type !== 'business') return fail('not_business');
+        if (!p.buyBusiness(card)) return fail('insufficient_cash');
+        this.log(p, 'boughtBiz', { symbol: card.symbol, cashFlow: card.cashFlow ?? 0 });
+        this.pendingCard = null;
+        this.resolved = true;
+        /* Fast Track entry is a player choice now (M5) */
+        return ok();
+      }
+
+      case 'buyStocks': {
+        if (card.type !== 'stock') return fail('not_stock');
+        const count = Number(payload.count) || 0;
+        if (!p.buyStocks(card, count)) return fail('insufficient_cash');
+        this.log(p, 'boughtStock', { symbol: card.symbol, count, price: card.price });
+        this.pendingCard = null;
+        this.resolved = true;
+        return ok();
+      }
+
+      case 'sellStocks': {
+        if (card.type !== 'stock') return fail('not_stock');
+        const count = Number(payload.count) || 0;
+        if (!p.sellStocks(card, count)) return fail('cannot_sell');
+        this.log(p, 'soldStock', { symbol: card.symbol, count, price: card.price });
+        this.pendingCard = null;
+        this.resolved = true;
+        return ok();
+      }
+
+      case 'buyGold': {
+        if (card.type !== 'goldCoins') return fail('not_gold');
+        if (!p.buyGoldCoins(card)) return fail('insufficient_cash');
+        this.log(p, 'boughtGold', { count: card.count });
+        this.pendingCard = null;
+        this.resolved = true;
+        return ok();
+      }
+
+      case 'sellGold': {
+        const count = Number(payload.count) || 0;
+        if (!p.sellGold(card, count)) return fail('cannot_sell');
+        this.log(p, 'soldGold', { count });
+        this.pendingCard = null;
+        this.resolved = true;
+        return ok();
+      }
+
+      case 'sellRealEstate': {
+        // Market-only: a card is a market sale offer when it carries a sale
+        // price (value or plus flag). Deal cards have neither, so they cannot
+        // be used to "sell" an asset.
+        if (card.value === undefined && !card.plus) return fail('not_market_card');
+        if (!p.sellRealEstate(card, String(payload.assetId))) return fail('cannot_sell');
+        this.log(p, 'soldRE');
+        this.pendingCard = null;
+        this.resolved = true;
+        /* Fast Track entry is a player choice now (M5) */
+        return ok();
+      }
+
+      case 'buyMlm': {
+        if (card.type !== 'mlm') return fail('not_mlm');
+        if (!p.buyMlm(card)) return fail('insufficient_cash');
+        this.log(p, 'joinedMlm', { symbol: card.symbol });
+        this.pendingCard = null;
+        this.resolved = true;
+        return ok();
+      }
+
+      case 'acceptLottery': {
+        if (card.type !== 'lottery') return fail('not_lottery');
+        return this.resolveLottery(p, card);
+      }
+
+      default:
+        return fail('unknown_action');
+    }
+  }
+
+  private resolveLottery(p: Player, card: Card): ActionResult {
+    const cost = card.cost ?? 0;
+    if (card.lottery === 'money') {
+      if (p.cash < cost) return fail('insufficient_cash');
+      p.forcePay(cost, `Lottery ${card.symbol}`);
+      const die = rollDie();
+      const win = (card.success ?? []).includes(die);
+      const payout = win ? card.outcome?.success ?? 0 : card.outcome?.failure ?? 0;
+      if (payout > 0) p.forcePay(-payout, 'Lottery payout');
+      this.log(p, 'lotteryMoney', { die, win, payout });
+    } else {
+      // stock split / reverse-split for everyone holding the symbol
+      const die = rollDie();
+      const up = (card.success ?? []).includes(die);
+      this.players.forEach((pl) => {
+        const stock = pl.assets.stocks.find((s) => s.symbol === card.symbol);
+        if (stock) stock.count = up ? stock.count * 2 : Math.ceil(stock.count / 2);
+      });
+      this.log(p, 'lotterySplit', { symbol: card.symbol, up, die });
+    }
+    this.pendingCard = null;
+    this.resolved = true;
+    return ok();
+  }
+
+  // ---------- Loans / rescue ----------
+
+  takeLoan(id: string, amount: number): ActionResult {
+    if (!this.isCurrent(id)) return fail('not_your_turn');
+    const p = this.currentPlayer;
+    if (p.phase === 'fastTrack') return fail('no_loans_on_fast_track');
+    if (p.isBankrupt) return fail('bankrupt');
+    if (!p.takeLoan(amount)) return fail('invalid_amount');
+    this.log(p, 'loanTaken', { amount });
+    return ok();
+  }
+
+  payLoan(id: string, type: keyof Liabilities, amount: number): ActionResult {
+    if (!this.isCurrent(id)) return fail('not_your_turn');
+    const p = this.currentPlayer;
+    if (!p.payLoan(amount, type)) return fail('cannot_pay');
+    this.log(p, 'loanPaid', { type: String(type), amount });
+    return ok();
+  }
+
+  liquidate(id: string): ActionResult {
+    if (!this.isCurrent(id)) return fail('not_your_turn');
+    const p = this.currentPlayer;
+    p.liquidateEverything();
+    this.log(p, p.isBankrupt ? 'bankrupt' : 'liquidated');
+    if (p.isBankrupt) {
+      this.resolved = true;
+      this.advanceTurn();
+    }
+    return ok();
+  }
+
+  // ---------- Rat Race exit ----------
+
+  // Fast Track entry is the player's CHOICE, offered at the start of their turn
+  // (getState().awaitingFastTrackChoice). It is no longer auto-forced (M5).
+  enterFastTrack(id: string): ActionResult {
+    if (!this.isCurrent(id)) return fail('not_your_turn');
+    const p = this.currentPlayer;
+    if (p.phase !== 'ratRace') return fail('already_fast_track');
+    if (this.hasRolled) return fail('already_rolled');
+    if (!p.canExitRatRace()) return fail('not_eligible');
+    if (p.needsRescue()) return fail('must_resolve_debt');
+    p.enterFastTrack();
+    this.log(p, 'enteredFT');
+    return ok();
+  }
+
+  // ---------- Fast Track ----------
+
+  chooseDream(id: string, dreamId: string): ActionResult {
+    const p = this.players.find((pl) => pl.id === id);
+    if (!p) return fail('no_player');
+    if (this.status !== 'started') return fail('game_not_started'); // chosen at setup (M4/L8)
+    if (!DREAMS.some((d) => d.id === dreamId)) return fail('invalid_dream');
+    p.dreamId = dreamId;
+    const dream = DREAMS.find((d) => d.id === dreamId)!;
+    this.log(p, 'choseDream', { name: dream.name });
+    return ok();
+  }
+
+  private resolveFastTrackLanding(steps: number): void {
+    const p = this.currentPlayer;
+    p.moveFastTrack(steps, FAST_TRACK_SIZE);
+    const tile = FAST_TRACK_BOARD[p.fastTrackPosition];
+
+    switch (tile.kind) {
+      case 'cashflowDay': {
+        const amount = p.fastTrackPayday();
+        this.log(p, 'ftPayday', { amount });
+        this.resolved = true;
+        break;
+      }
+      case 'charity': {
+        p.ftCharityDice = true; // permanent: may roll 1/2/3 dice, no cost
+        this.log(p, 'ftCharity');
+        this.resolved = true;
+        break;
+      }
+      case 'loss': {
+        const paid = p.payFastTrackLoss(tile.amount ?? 0, !!tile.half, tile.name ?? 'Loss', !!tile.full);
+        this.log(p, 'ftLoss', { name: tile.name ?? 'Loss', paid });
+        this.resolved = true;
+        break;
+      }
+      case 'investment':
+        this.pendingFastTrackTile = tile;
+        this.log(p, 'ftInvestment', { name: tile.name ?? '', cost: tile.cost ?? 0, cashFlow: tile.cashFlow ?? 0 });
+        this.resolved = false;
+        break;
+      case 'dream':
+        // Landing on someone else's Dream raises its cost to the owner by 100%/marker (M4).
+        if (tile.id && p.dreamId !== tile.id) {
+          this.dreamMarkers[tile.id] = (this.dreamMarkers[tile.id] ?? 0) + 1;
+          this.log(p, 'ftDreamMarker');
+        }
+        this.pendingFastTrackTile = tile;
+        this.resolved = false;
+        break;
+      default:
+        this.resolved = true;
+    }
+    this.checkFastTrackWin();
+  }
+
+  fastTrackAction(id: string, action: 'buy' | 'skip'): ActionResult {
+    if (!this.isCurrent(id)) return fail('not_your_turn');
+    const tile = this.pendingFastTrackTile;
+    if (!tile) return fail('no_pending_tile');
+    const p = this.currentPlayer;
+
+    if (action === 'skip') {
+      this.log(p, 'ftPassed', { name: tile.name ?? tile.kind });
+      this.pendingFastTrackTile = null;
+      this.resolved = true;
+      return ok();
+    }
+
+    if (tile.kind === 'investment') {
+      if (p.ownedInvestments.has(tile.id ?? '')) return fail('already_owned');
+      const investCost = tile.downPayment ?? tile.cost ?? 0;
+      if (!p.buyFastTrackInvestment(tile.cost ?? 0, tile.cashFlow ?? 0, tile.name ?? 'investment', tile.id ?? '', tile.downPayment)) {
+        return fail('insufficient_cash');
+      }
+      this.log(p, 'ftInvested', { name: tile.name ?? 'investment', cashFlow: tile.cashFlow ?? 0, paid: investCost });
+      this.pendingFastTrackTile = null;
+      this.resolved = true;
+      this.checkFastTrackWin();
+      return ok();
+    }
+
+    if (tile.kind === 'dream') {
+      const dream = DREAMS.find((d) => d.id === tile.id);
+      if (!dream) return fail('invalid_dream');
+      if (p.dreamId !== dream.id) return fail('not_your_dream');
+      const markers = this.dreamMarkers[dream.id] ?? 0;
+      const cost = dream.cost * (1 + markers);
+      if (p.cash < cost) return fail('insufficient_cash');
+      p.forcePay(cost, `Bought dream: ${dream.name}`);
+      this.win(p, `bought their dream: ${dream.name}`);
+      this.pendingFastTrackTile = null;
+      this.resolved = true;
+      return ok();
+    }
+
+    return fail('unknown_action');
+  }
+
+  private checkFastTrackWin(): void {
+    const p = this.currentPlayer;
+    if (p.phase === 'fastTrack' && p.fastTrackCashFlowGain >= FAST_TRACK_CASHFLOW_GOAL) {
+      this.win(p, `reached +$${FAST_TRACK_CASHFLOW_GOAL.toLocaleString()}/mo cash flow`);
+    }
+  }
+
+  private win(p: Player, reason: string): void {
+    p.hasWon = true;
+    this.winnerId = p.id;
+    this.status = 'finished';
+    this.log(p, 'won', { reason });
+  }
+
+  // ---------- Logging / state ----------
+
+  private log(p: Player | undefined, code: string, params: Record<string, unknown> = {}): void {
+    this.logs.unshift({
+      ts: Date.now(),
+      player: p?.username ?? 'system',
+      color: p?.color ?? '#888',
+      code,
+      params
+    });
+    if (this.logs.length > 100) this.logs.pop();
+  }
+
+  // ---------- Persistence ----------
+
+  toState(): Record<string, unknown> {
+    return {
+      roomId: this.roomId,
+      status: this.status,
+      difficulty: this.difficulty,
+      currentIndex: this.currentIndex,
+      diceValues: this.diceValues,
+      hasRolled: this.hasRolled,
+      resolved: this.resolved,
+      pendingCard: this.pendingCard,
+      awaitingDealChoice: this.awaitingDealChoice,
+      pendingFastTrackTile: this.pendingFastTrackTile,
+      logs: this.logs,
+      winnerId: this.winnerId,
+      dreamMarkers: this.dreamMarkers,
+      players: this.players.map((p) => p.toState())
+    };
+  }
+
+  hydrate(s: any): void {
+    this.roomId = s.roomId ?? this.roomId;
+    this.status = s.status;
+    this.difficulty = s.difficulty === 'easy' ? 'easy' : 'normal';
+    this.currentIndex = s.currentIndex ?? 0;
+    this.diceValues = s.diceValues ?? [];
+    this.hasRolled = !!s.hasRolled;
+    this.resolved = !!s.resolved;
+    this.pendingCard = s.pendingCard ?? null;
+    this.awaitingDealChoice = !!s.awaitingDealChoice;
+    this.pendingFastTrackTile = s.pendingFastTrackTile ?? null;
+    this.logs = s.logs ?? [];
+    this.winnerId = s.winnerId ?? null;
+    this.dreamMarkers = s.dreamMarkers ?? {};
+    this.players = (s.players ?? []).map((p: any) => Player.fromState(p));
+  }
+
+  getState(): PublicGameState {
+    // Dream is chosen at setup (M4/L8): prompt every active player without one.
+    const awaitingDreamChoice =
+      this.status === 'started'
+        ? this.players.filter((p) => !p.dreamId && !p.isBankrupt).map((p) => p.id)
+        : [];
+    const cur = this.players.length ? this.currentPlayer : null;
+    const awaitingFastTrackChoice =
+      this.status === 'started' &&
+      cur &&
+      cur.phase === 'ratRace' &&
+      cur.canExitRatRace() &&
+      !cur.needsRescue() &&
+      !this.hasRolled
+        ? cur.id
+        : null;
+    return {
+      roomId: this.roomId,
+      status: this.status,
+      difficulty: this.difficulty,
+      players: this.players.map((p) => p.toPublic()),
+      currentPlayerId: this.players.length ? this.currentPlayer.id : null,
+      diceValues: this.diceValues,
+      hasRolled: this.hasRolled,
+      pendingCard: this.pendingCard,
+      pendingFastTrackTile: this.pendingFastTrackTile,
+      awaitingDealChoice: this.awaitingDealChoice,
+      awaitingDreamChoice,
+      awaitingFastTrackChoice,
+      dreamMarkers: this.dreamMarkers,
+      logs: this.logs,
+      winnerId: this.winnerId
+    };
+  }
+}
