@@ -11,6 +11,10 @@ services:
       PORT: 8080
       FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID}
       MONGO_URL: ${MONGO_URL}
+    # Production reaches the app only via the cloudflared tunnel. Uncomment to also
+    # expose it on the host for local testing before the tunnel is set up:
+    # ports:
+    #   - "8080:8080"
     networks: [shared-db, internal]
     restart: unless-stopped
 

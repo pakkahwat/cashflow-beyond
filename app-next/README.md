@@ -85,8 +85,8 @@ Local dev runs Next dev server + a separate WebSocket server (no Docker needed):
 From the **repo root**:
 
 ```bash
-cp .env.example app-next/.env.local    # or edit the existing app-next/.env.local
-# Fill in Firebase values (MONGO_URL optional for local testing)
+cp app-next/.env.local.example app-next/.env.local   # then fill in your Firebase web config
+# (MONGO_URL is optional for local testing; .env.development already sets NEXT_PUBLIC_WS_URL=ws://localhost:3001)
 
 # Terminal 1 — Next dev server (port 3000):
 cd app-next && npm run dev
@@ -97,7 +97,7 @@ cd app-next && npm run dev:ws
 
 The dev WebSocket base URL is set in `.env.development` (committed, no secrets):
 ```
-NEXT_PUBLIC_WS_BASE=ws://localhost:3001
+NEXT_PUBLIC_WS_URL=ws://localhost:3001
 ```
 
 ---
