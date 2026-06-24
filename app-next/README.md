@@ -66,15 +66,11 @@ mongodb://cashflow_app:<pwd>@shared-mongo:27017/cashflow?authSource=cashflow
 
 ## Step 4 — Configure and run
 
+From the **repo root**:
+
 ```bash
-cd app-next
-cp .env.example .env
+cp app-next/.env.example .env
 # Edit .env — fill in all values (Firebase config, cashflow_app password, TUNNEL_TOKEN)
-```
-
-Then from the **repo root**:
-
-```bash
 docker compose up --build
 ```
 
@@ -86,16 +82,17 @@ Open your tunnel hostname in a browser and play.
 
 Local dev runs Next dev server + a separate WebSocket server (no Docker needed):
 
+From the **repo root**:
+
 ```bash
-cd app-next
-cp .env.example .env.local    # or edit the existing .env.local
+cp .env.example app-next/.env.local    # or edit the existing app-next/.env.local
 # Fill in Firebase values (MONGO_URL optional for local testing)
 
 # Terminal 1 — Next dev server (port 3000):
-npm run dev
+cd app-next && npm run dev
 
 # Terminal 2 — WebSocket dev server (port 3001):
-npm run dev:ws
+cd app-next && npm run dev:ws
 ```
 
 The dev WebSocket base URL is set in `.env.development` (committed, no secrets):
