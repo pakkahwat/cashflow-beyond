@@ -6,3 +6,5 @@ coverage/
 countLinesAndFiles.sh
 counter.sh
 .playwright-mcp/
+# cloudflared tunnel secret (config.yml is safe to commit)
+cloudflared/credentials.json

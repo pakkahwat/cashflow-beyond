@@ -54,13 +54,21 @@ mongodb://cashflow_app:<pwd>@shared-mongo:27017/cashflow?authSource=cashflow
 
 ---
 
-## Step 3 — Create a Cloudflare Tunnel
+## Step 3 — Cloudflare Tunnel (locally-managed, already set up)
 
-1. [Cloudflare Zero Trust](https://one.dash.cloudflare.com) > **Networks > Tunnels > Create a tunnel**.
-2. Name it (e.g. `cashflow-beyond`), copy the **tunnel token**.
-3. In **Public Hostname** add a route:
-   - Subdomain / domain: your public hostname
-   - Service: `http://cashflow-app:8080`
+This repo ships a **locally-managed** tunnel — no token. `cloudflared/config.yml` holds the
+ingress (`cashflow.jeerawut.com` -> `http://cashflow-app:8080`, plus a `/__/auth/*` proxy to
+`easy-palm.firebaseapp.com` so Google sign-in is same-origin on mobile). The secret
+`cloudflared/credentials.json` is **gitignored** and already present on this machine.
+
+The tunnel `cashflow-beyond` and its DNS (`cashflow.jeerawut.com`) are already created. To set
+one up on a fresh machine:
+```bash
+cloudflared tunnel create cashflow-beyond
+cloudflared tunnel route dns cashflow-beyond <your-hostname>
+cp ~/.cloudflared/<uuid>.json cloudflared/credentials.json   # gitignored
+# set tunnel id + hostname in cloudflared/config.yml
+```
 
 ---
 
@@ -70,7 +78,7 @@ From the **repo root**:
 
 ```bash
 cp .env.example .env
-# Edit .env — fill in all values (Firebase config, cashflow_app password, TUNNEL_TOKEN)
+# .env is pre-filled (MONGO_URL + Firebase from easy-palm). No TUNNEL_TOKEN needed (locally-managed tunnel).
 docker compose up --build
 ```
 
@@ -112,7 +120,7 @@ NEXT_PUBLIC_WS_URL=ws://localhost:3001
 | `NEXT_PUBLIC_FIREBASE_APP_ID` | Build + runtime | Firebase web config |
 | `FIREBASE_PROJECT_ID` | Runtime (server) | Server-side token verification |
 | `MONGO_URL` | Runtime (server) | MongoDB connection string |
-| `TUNNEL_TOKEN` | Runtime (cloudflared) | Cloudflare tunnel token |
+| _(tunnel)_ | cloudflared | Locally-managed via `cloudflared/config.yml` + `credentials.json` (no token) |
 | `PORT` | Runtime (server) | HTTP port (default `8080`) |
 
 `NEXT_PUBLIC_*` values are **baked into the browser bundle at build time** — changing them requires a rebuild (`docker compose up --build`).

@@ -20,9 +20,13 @@ services:
 
   cloudflared:
     image: cloudflare/cloudflared:latest
-    command: tunnel --no-autoupdate run
-    environment:
-      TUNNEL_TOKEN: ${TUNNEL_TOKEN}
+    # Locally-managed tunnel "cashflow-beyond" (ingress in cloudflared/config.yml).
+    # The tunnel + DNS (cashflow.jeerawut.com) are already created; credentials.json
+    # is gitignored and provided locally.
+    command: tunnel --no-autoupdate --config /etc/cloudflared/config.yml run
+    volumes:
+      - ./cloudflared/config.yml:/etc/cloudflared/config.yml:ro
+      - ./cloudflared/credentials.json:/etc/cloudflared/credentials.json:ro
     depends_on: [cashflow-app]
     networks: [internal]
     restart: unless-stopped

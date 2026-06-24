@@ -1,0 +1,15 @@
+tunnel: 18d66d85-2626-402a-b5cf-1c37ff90c374
+credentials-file: /etc/cloudflared/credentials.json
+
+ingress:
+  # Firebase Auth same-origin proxy: /__/auth/* -> easy-palm.firebaseapp.com
+  # so authDomain=cashflow.jeerawut.com is same-origin -> signInWithRedirect works on mobile.
+  - hostname: cashflow.jeerawut.com
+    path: ^/__/.*
+    service: https://easy-palm.firebaseapp.com
+    originRequest:
+      httpHostHeader: easy-palm.firebaseapp.com
+      originServerName: easy-palm.firebaseapp.com
+  - hostname: cashflow.jeerawut.com
+    service: http://cashflow-app:8080
+  - service: http_status:404
