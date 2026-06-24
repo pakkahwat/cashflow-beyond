@@ -1,5 +1,6 @@
 import { rooms, type Room } from './RoomManager.js';
 import { nextBotAction, type BotAction } from './botPolicy.js';
+import { maybeRecordGameEnd } from './recordGameEnd.js';
 
 /** Delay between consecutive bot actions, so a human can watch the bot play. */
 const BOT_DELAY_MS = Number(process.env.BOT_DELAY_MS) || 700;
@@ -70,6 +71,7 @@ export function maybeRunBots(room: Room, broadcast: (room: Room) => void): void 
         // Couldn't even end the turn: avoid an infinite loop. Broadcast current
         // state and stop; a human action (or reconnect) can unstick the room.
         broadcast(room);
+        maybeRecordGameEnd(room);
         return stop();
       }
       actionsThisTurn = 0;
@@ -83,6 +85,7 @@ export function maybeRunBots(room: Room, broadcast: (room: Room) => void): void 
         const ended = game.endTurn(botId);
         if (!ended.ok) {
           broadcast(room);
+          maybeRecordGameEnd(room);
           return stop();
         }
         actionsThisTurn = 0;
@@ -91,6 +94,7 @@ export function maybeRunBots(room: Room, broadcast: (room: Room) => void): void 
     }
 
     broadcast(room);
+    maybeRecordGameEnd(room);
 
     // Still a bot's turn? schedule the next action; otherwise we're done.
     if (isBotTurn()) {

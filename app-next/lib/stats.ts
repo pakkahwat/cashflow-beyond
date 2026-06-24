@@ -103,7 +103,7 @@ export function buildMatch(
     const inc: UserDelta['inc'] = { gamesPlayed: 1 };
     if (isWinner) {
       inc.gamesWon = 1;
-    } else if (isDraw || !isWinner) {
+    } else if (!isDraw && !isWinner) {
       inc.gamesLost = 1;
     }
 

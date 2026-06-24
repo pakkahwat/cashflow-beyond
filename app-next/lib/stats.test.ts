@@ -182,16 +182,25 @@ describe('buildMatch', () => {
     expect(userDeltas[0].inc.gamesWon).toBe(1);
   });
 
-  it('handles null winnerId (all bankrupt draw)', () => {
+  it('handles null winnerId (all bankrupt draw) — draw does NOT increment gamesLost', () => {
     const state = makeState({ winnerId: null, status: 'finished' });
     const { matchDoc, userDeltas } = buildMatch('ABCDE', state, 0, 1000);
 
     expect(matchDoc.winnerUid).toBeNull();
-    // all players get gamesPlayed +1 and gamesLost +1 (no winner)
+    // all players get gamesPlayed +1; draws do NOT get gamesWon or gamesLost
     userDeltas.forEach((d) => {
       expect(d.inc.gamesPlayed).toBe(1);
-      expect(d.inc.gamesLost).toBe(1);
+      expect(d.inc.gamesLost).toBeUndefined();
       expect(d.inc.gamesWon).toBeUndefined();
+    });
+  });
+
+  it('each draw player has result:"draw" in matchDoc.players', () => {
+    const state = makeState({ winnerId: null, status: 'finished' });
+    const { matchDoc } = buildMatch('ABCDE', state, 0, 1000);
+
+    matchDoc.players.forEach((p) => {
+      expect(p.result).toBe('draw');
     });
   });
 });
