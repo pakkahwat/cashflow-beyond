@@ -2,6 +2,8 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getIdToken } from '../lib/firebase';
+import { useAuth } from './AuthGate';
+import { useGame } from '../store/gameStore';
 
 interface ProfileData {
   uid: string;
@@ -53,6 +55,14 @@ const dateStr = (ts: number) =>
 
 export default function Profile({ onBack }: Props) {
   const { t } = useTranslation();
+  const { signOut } = useAuth();
+  const resetGame = useGame((s) => s.reset);
+  // Reset in-memory game state too, so the next sign-in starts clean (signOut already
+  // clears the persisted session keys).
+  const handleSignOut = () => {
+    resetGame();
+    signOut();
+  };
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [stats, setStats] = useState<StatsData | null>(null);
   const [matchList, setMatchList] = useState<MatchEntry[]>([]);
@@ -124,6 +134,9 @@ export default function Profile({ onBack }: Props) {
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.5rem' }}>
         <button className="btn ghost small" onClick={onBack} style={{ padding: '6px 10px', fontSize: 18 }}>←</button>
         <h2 style={{ margin: 0, fontSize: '1.35rem', fontWeight: 700 }}>{t('profile.title', 'Profile')}</h2>
+        <button className="btn ghost small" onClick={handleSignOut} style={{ marginLeft: 'auto' }}>
+          {t('profile.signOut', 'Sign out')}
+        </button>
       </div>
 
       {/* Player identity */}

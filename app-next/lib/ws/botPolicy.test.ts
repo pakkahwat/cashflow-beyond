@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { nextBotAction } from './botPolicy.js';
+import { nextBotAction, acceptDealOffer } from './botPolicy.js';
 import type { PublicGameState, PublicPlayer, Card } from '../../engine/types.js';
 
 // ---------- Fixture builders (mirror the REAL public state shape) ----------
@@ -69,6 +69,7 @@ const makeState = (over: Partial<PublicGameState> = {}, player?: PublicPlayer): 
     awaitingDealChoice: false,
     awaitingDreamChoice: [],
     awaitingFastTrackChoice: null,
+    pendingOffer: null,
     dreamMarkers: {},
     logs: [],
     winnerId: null,
@@ -85,6 +86,21 @@ const reCard = (over: Partial<Card> = {}): Card => ({
   mortgage: 45000,
   cashFlow: 300,
   ...over
+});
+
+describe('acceptDealOffer (P2P deal passed to a bot)', () => {
+  it('accepts a positive-cashflow deal it can afford', () => {
+    const bot = makePlayer({ cash: 50000 });
+    expect(acceptDealOffer(reCard({ cashFlow: 300, downPayment: 5000 }), bot)).toBe(true);
+  });
+  it('declines a deal it cannot afford (keeps its cash cushion)', () => {
+    const bot = makePlayer({ cash: 4000 }); // below LOW_CASH after a 5000 down payment
+    expect(acceptDealOffer(reCard({ cashFlow: 300, downPayment: 5000 }), bot)).toBe(false);
+  });
+  it('declines a non-cashflowing deal even if affordable', () => {
+    const bot = makePlayer({ cash: 50000 });
+    expect(acceptDealOffer(reCard({ cashFlow: 0, downPayment: 5000 }), bot)).toBe(false);
+  });
 });
 
 describe('nextBotAction', () => {

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState, Suspense } from 'react';
 import { useTranslation } from 'react-i18next';
-import { emit, leaveRoom } from '../lib/socket';
+import { emit, leaveRoom, setAutoPlay } from '../lib/socket';
 import { formatLog } from '../lib/logFormat';
 import { useGame, myPlayer } from '../store/gameStore';
 import RatRaceBoard from './RatRaceBoard';
@@ -69,6 +69,24 @@ export default function Game() {
   useEffect(() => {
     if (state?.status === 'started') setShowProfession(true);
   }, [state?.status]);
+
+  // ---- Auto-play ----
+  // `auto` is mirrored to the server (which then plays our turns like a bot). It is
+  // auto-enabled after 15s of inactivity DURING OUR OWN TURN (per the player's spec).
+  const [auto, setAuto] = useState(false);
+  useEffect(() => { setAutoPlay(auto); }, [auto]);
+  // Auto also dismisses the one-time profession card so play isn't blocked behind it.
+  useEffect(() => { if (auto) setShowProfession(false); }, [auto]);
+  // 15s idle → Auto. Only counts while it IS our turn; any key/pointer input resets it.
+  const myTurnForIdle = state?.status === 'started' && state?.currentPlayerId === myId;
+  useEffect(() => {
+    if (auto || !myTurnForIdle) return;
+    let t = setTimeout(() => setAuto(true), 15000);
+    const reset = () => { clearTimeout(t); t = setTimeout(() => setAuto(true), 15000); };
+    window.addEventListener('pointerdown', reset);
+    window.addEventListener('keydown', reset);
+    return () => { clearTimeout(t); window.removeEventListener('pointerdown', reset); window.removeEventListener('keydown', reset); };
+  }, [auto, myTurnForIdle]);
 
   // Centre-screen dice flourish + walk gating + landing-feedback toast.
   const [rollFx, setRollFx] = useState<{ values: number[]; total: number } | null>(null);
@@ -356,6 +374,13 @@ export default function Game() {
           {me && <span className="prof-pill">{me.professionName}</span>}
           <span className="room-pill">{state.roomId}</span>
           <div className="view-toggles">
+            <button
+              className={`view-btn auto-btn ${auto ? 'active' : ''}`}
+              onClick={() => setAuto((a) => !a)}
+              title={t('game.autoHint', 'Auto-play your turns (also turns on after 15s idle on your turn)')}
+            >
+              {auto ? '⏸' : '▶'} {t('game.auto', 'Auto')}
+            </button>
             <button className="view-btn newgame" onClick={newGame} title={t('game.newGame')}>
               🔄 {t('game.newGame')}
             </button>
@@ -439,6 +464,11 @@ export default function Game() {
         <ProfessionCard me={me} onClose={() => setShowProfession(false)} />
       )}
       {!showProfession && needDream && <DreamPicker dreams={dreams} />}
+      {auto && (
+        <div className="auto-banner" onClick={() => setAuto(false)} title={t('game.autoStop', 'Tap to stop')}>
+          🤖 {t('game.autoOn', 'Auto-play on')} — {t('game.autoStop', 'tap to stop')}
+        </div>
+      )}
       {eventToast && <div className="event-toast">{eventToast}</div>}
       {!needDream && !walking && state.pendingCard && (
         <CardModal card={state.pendingCard} me={me} isMyTurn={isMyTurn} />

@@ -59,6 +59,8 @@ test('two players can create, join, start and roll', async () => {
   await g.goto('/');
   await g.waitForSelector('.screen.home', { timeout: 20_000 });
   await g.locator('input.text-input').nth(0).fill('Bob');
+  // Home now uses mode tabs; open the Join tab to reveal the room-code field.
+  await g.locator('.mode-tabs button').filter({ hasText: /เข้าร่วม|Join/i }).click();
   await g.locator('input.text-input').nth(1).fill(code);
   await g.locator('button.btn').filter({ hasText: /เข้าร่วม|join/i }).click();
   await g.waitForSelector('.screen.lobby', { timeout: 20_000 });

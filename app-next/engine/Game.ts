@@ -53,6 +53,7 @@ export class Game {
   private resolved = false; // current player may end the turn
   private pendingCard: Card | null = null;
   private awaitingDealChoice = false;
+  private pendingOffer: { fromId: string; toId: string } | null = null;
   private pendingFastTrackTile: ReturnType<() => (typeof FAST_TRACK_BOARD)[number]> | null = null;
   private logs: { ts: number; player: string; color: string; code: string; params: Record<string, unknown> }[] = [];
   private winnerId: string | null = null;
@@ -135,7 +136,17 @@ export class Game {
       this.players[i] = fresh;
     });
     this.status = 'started';
-    this.currentIndex = Math.floor(Math.random() * this.players.length); // highest-roll-goes-first ≈ random
+    // Opening roll: each player rolls one die; the highest goes first (ties broken
+    // randomly among those tied), then play passes around — per the rulebook setup.
+    const rolls = this.players.map((pl) => ({ id: pl.id, roll: rollDie() }));
+    const max = Math.max(...rolls.map((r) => r.roll));
+    const tied = rolls.filter((r) => r.roll === max);
+    const winnerId = tied[Math.floor(Math.random() * tied.length)].id;
+    this.currentIndex = this.players.findIndex((pl) => pl.id === winnerId);
+    this.log(this.currentPlayer, 'firstPlayer', {
+      name: this.currentPlayer.username,
+      roll: max
+    });
     this.beginTurn();
     this.log(this.currentPlayer, 'started');
     return ok();
@@ -156,6 +167,7 @@ export class Game {
     this.resolved = false;
     this.pendingCard = null;
     this.awaitingDealChoice = false;
+    this.pendingOffer = null;
     this.pendingFastTrackTile = null;
     this.diceValues = [];
 
@@ -237,6 +249,12 @@ export class Game {
       if (ratRaceTileTypeFor(pos, this.difficulty) === 'payday') {
         const amount = p.payday();
         this.log(p, 'payday', { amount });
+        // MLM passive income: every payday, roll 1 die — 4–6 pays $500 (the card).
+        if (p.hasMlm) {
+          const die = rollDie();
+          const payout = p.mlmPayout(die >= 4);
+          this.log(p, 'mlmPayout', { die, win: payout > 0, payout });
+        }
       }
     });
 
@@ -332,6 +350,62 @@ export class Game {
     return ok();
   }
 
+  // ---------- Peer-to-peer deal offer (rulebook: sell the option to a player) ----------
+
+  /** Pass the buy-option of the current pending DEAL card to another player — the
+   *  only sanctioned player-to-player interaction. The recipient then buys the asset
+   *  or declines. Only a buyable deal (real estate / business, not a market sale)
+   *  may be offered. */
+  offerDeal(id: string, toPlayerId: string): ActionResult {
+    if (!this.isCurrent(id)) return fail('not_your_turn');
+    if (this.pendingOffer) return fail('offer_pending');
+    const card = this.pendingCard;
+    if (!card) return fail('no_pending_card');
+    const buyable =
+      (card.type === 'realEstate' || card.type === 'business') && card.value === undefined && !card.plus;
+    if (!buyable) return fail('not_offerable');
+    const target = this.players.find((pl) => pl.id === toPlayerId);
+    if (!target || target.id === id || target.isBankrupt || target.phase !== 'ratRace') {
+      return fail('invalid_target');
+    }
+    this.pendingOffer = { fromId: id, toId: toPlayerId };
+    this.log(target, 'offeredDeal', { from: this.currentPlayer.username, heading: card.heading ?? card.type });
+    return ok();
+  }
+
+  /** Offer recipient buys the passed deal, or declines (returning it to the offering
+   *  player to buy or skip). Acts out of turn; the turn stays with the offerer. */
+  respondOffer(id: string, accept: boolean): ActionResult {
+    const offer = this.pendingOffer;
+    if (!offer) return fail('no_offer');
+    if (offer.toId !== id) return fail('not_offer_target');
+    const card = this.pendingCard;
+    if (!card) {
+      this.pendingOffer = null;
+      return fail('no_pending_card');
+    }
+    const recipient = this.players.find((pl) => pl.id === id);
+    if (!recipient || recipient.isBankrupt) return fail('no_player');
+
+    if (accept) {
+      const bought = card.type === 'business' ? recipient.buyBusiness(card) : recipient.buyRealEstate(card);
+      if (!bought) return fail('insufficient_cash');
+      this.log(recipient, card.type === 'business' ? 'boughtBiz' : 'boughtRE', {
+        symbol: card.symbol,
+        cashFlow: card.cashFlow ?? 0
+      });
+      // The offering player passed the deal — their card resolution is complete.
+      this.pendingOffer = null;
+      this.pendingCard = null;
+      this.resolved = true;
+      return ok();
+    }
+    // Declined — hand the deal back to the original player to buy or skip.
+    this.log(recipient, 'declinedDeal');
+    this.pendingOffer = null;
+    return ok();
+  }
+
   // ---------- Card actions ----------
 
   cardAction(id: string, action: string, payload: any = {}): ActionResult {
@@ -347,6 +421,7 @@ export class Game {
         (action === 'sellStocks' && card.type === 'stock') ||
         (action === 'sellGold' && card.type === 'goldCoins') ||
         (action === 'sellRealEstate' && (card.value !== undefined || !!card.plus)) ||
+        (action === 'sellBusiness' && card.type === 'business' && (card.value !== undefined || !!card.plus)) ||
         !!card.applicableToEveryOne
       ) {
         const seller = this.players.find((pl) => pl.id === id);
@@ -367,6 +442,12 @@ export class Game {
           const assetId = String(payload.assetId);
           if (!seller.sellRealEstate(card, assetId)) return fail('cannot_sell');
           this.log(seller, 'soldRE');
+          return ok();
+        }
+        if (action === 'sellBusiness') {
+          const assetId = String(payload.assetId);
+          if (!seller.sellBusiness(card, assetId)) return fail('cannot_sell');
+          this.log(seller, 'soldBiz');
           return ok();
         }
       }
@@ -462,6 +543,18 @@ export class Game {
         return ok();
       }
 
+      case 'sellBusiness': {
+        // Market-only: a business card is a sale offer when it carries a sale
+        // price (value or plus). Big-deal business cards have neither.
+        if (card.type !== 'business') return fail('not_business');
+        if (card.value === undefined && !card.plus) return fail('not_market_card');
+        if (!p.sellBusiness(card, String(payload.assetId))) return fail('cannot_sell');
+        this.log(p, 'soldBiz');
+        this.pendingCard = null;
+        this.resolved = true;
+        return ok();
+      }
+
       case 'buyMlm': {
         if (card.type !== 'mlm') return fail('not_mlm');
         if (!p.buyMlm(card)) return fail('insufficient_cash');
@@ -529,12 +622,21 @@ export class Game {
   liquidate(id: string): ActionResult {
     if (!this.isCurrent(id)) return fail('not_your_turn');
     const p = this.currentPlayer;
+    const wasRescue = p.needsRescue(); // forced fire-sale to climb out of negative cash
     p.liquidateEverything();
-    this.log(p, p.isBankrupt ? 'bankrupt' : 'liquidated');
     if (p.isBankrupt) {
+      this.log(p, 'bankrupt');
       this.resolved = true;
       this.advanceTurn();
+      return ok();
     }
+    // Recovered: the rulebook penalises a forced fire-sale by costing turns.
+    let turnsLost = 0;
+    if (wasRescue) {
+      turnsLost = this.difficulty === 'easy' ? 1 : 3;
+      p.skippedTurns += turnsLost;
+    }
+    this.log(p, 'liquidated', { turnsLost });
     return ok();
   }
 
@@ -694,6 +796,7 @@ export class Game {
       resolved: this.resolved,
       pendingCard: this.pendingCard,
       awaitingDealChoice: this.awaitingDealChoice,
+      pendingOffer: this.pendingOffer,
       pendingFastTrackTile: this.pendingFastTrackTile,
       logs: this.logs,
       winnerId: this.winnerId,
@@ -712,6 +815,7 @@ export class Game {
     this.resolved = !!s.resolved;
     this.pendingCard = s.pendingCard ?? null;
     this.awaitingDealChoice = !!s.awaitingDealChoice;
+    this.pendingOffer = s.pendingOffer ?? null;
     this.pendingFastTrackTile = s.pendingFastTrackTile ?? null;
     this.logs = s.logs ?? [];
     this.winnerId = s.winnerId ?? null;
@@ -748,6 +852,7 @@ export class Game {
       awaitingDealChoice: this.awaitingDealChoice,
       awaitingDreamChoice,
       awaitingFastTrackChoice,
+      pendingOffer: this.pendingOffer,
       dreamMarkers: this.dreamMarkers,
       logs: this.logs,
       winnerId: this.winnerId

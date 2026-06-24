@@ -14,6 +14,21 @@ import type {
 
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v));
 
+/**
+ * Coarse real-estate "category" for matching a Market buyer card to an owned
+ * property. The card data uses inconsistent symbols (4-PLEX/8-PLEX vs a "PLEX"
+ * buyer; "3Br/2Ba" vs "3Br/2ba"), so we normalise. Returns null for property
+ * types that have NO dedicated buyer card (apartment UNITS, DUPLEX, …) — those
+ * stay sellable by any buyer so they are never stranded (avoids a regression).
+ */
+export const reCategory = (symbol: string | undefined): string | null => {
+  const s = (symbol ?? '').toLowerCase();
+  if (s.includes('plex')) return 'plex';
+  if (s.includes('2br/1ba')) return '2br/1ba';
+  if (s.includes('3br/2ba')) return '3br/2ba';
+  return null;
+};
+
 const LOAN_EXPENSE_FIELD: Record<string, keyof Expenses> = {
   homeMortgage: 'homeMortgagePayment',
   schoolLoans: 'schoolLoanPayment',
@@ -122,6 +137,18 @@ export class Player {
   payday(): number {
     const amount = this.cashFlow;
     this.record(amount, 'Payday');
+    return amount;
+  }
+
+  /**
+   * MLM passive income. The MLM card says: every payday roll 1 die, on 4–6
+   * collect $500. The Game rolls the die (it owns randomness) and passes the
+   * win/loss; here we just credit the payout. No-op for players without MLM.
+   */
+  mlmPayout(win: boolean): number {
+    if (!this.hasMlm) return 0;
+    const amount = win ? 500 : 0;
+    if (amount) this.record(amount, 'MLM income');
     return amount;
   }
 
@@ -277,12 +304,34 @@ export class Player {
     const idx = this.assets.realEstates.findIndex((r) => r.id === id);
     if (idx < 0) return false;
     const re = this.assets.realEstates[idx];
+    // A Market buyer is property-type specific: a "Plex Buyer" may only buy a plex,
+    // not a 2Br house, so it can't snap up the wrong property at the wrong gain.
+    // Only enforced when BOTH symbols map to a known category (un-targeted types
+    // stay sellable by any buyer — see reCategory).
+    const buyerCat = reCategory(card.symbol);
+    const assetCat = reCategory(re.symbol);
+    if (buyerCat && assetCat && buyerCat !== assetCat) return false;
     const gain = card.plus ? card.value ?? 0 : (re.cost * (card.value ?? 0)) / 100;
     const proceeds = re.cost + gain - re.mortgage;
     this.assets.realEstates.splice(idx, 1);
     this.income.realEstates = this.income.realEstates.filter((r) => r.id !== id);
     this.liabilities.realEstates = this.liabilities.realEstates.filter((r) => r.id !== id);
     this.record(proceeds, `Sell ${re.symbol}`);
+    return true;
+  }
+
+  /** Business market sale: card.value is a % gain (or fixed $ if plus), like RE.
+   *  Selling discharges the business's mortgage and gives up its cash flow. */
+  sellBusiness(card: Card, id: string): boolean {
+    const idx = this.assets.businesses.findIndex((b) => b.id === id);
+    if (idx < 0) return false;
+    const biz = this.assets.businesses[idx];
+    const gain = card.plus ? card.value ?? 0 : (biz.cost * (card.value ?? 0)) / 100;
+    const proceeds = biz.cost + gain - (biz.mortgage ?? 0);
+    this.assets.businesses.splice(idx, 1);
+    this.income.businesses = (this.income.businesses ?? []).filter((b) => b.id !== id);
+    this.liabilities.realEstates = this.liabilities.realEstates.filter((b) => b.id !== id);
+    this.record(proceeds, `Sell ${biz.symbol}`);
     return true;
   }
 
@@ -353,6 +402,9 @@ export class Player {
     this.assets.stocks = [];
     this.income.realEstates = [];
     this.income.businesses = [];
+    // Selling a property/business also discharges its mortgage — don't leave a
+    // ghost liability on the balance sheet for assets that no longer exist.
+    this.liabilities.realEstates = [];
     this.record(Math.round(proceeds), 'Liquidated all assets');
     if (this.cash < 0) {
       // Debt relief: the bank forgives half of consumer debt (car + credit) and

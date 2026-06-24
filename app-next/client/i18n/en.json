@@ -14,7 +14,15 @@
     "or": "or",
     "howToPlay": "How to play",
     "playVsBots": "Play vs Bots",
-    "botCount": "Bots:"
+    "botCount": "Bots:",
+    "tabCreate": "Create",
+    "tabJoin": "Join",
+    "tabBots": "Bots",
+    "profile": "My Profile",
+    "signOut": "Sign out"
+  },
+  "profile": {
+    "signOut": "Sign out"
   },
   "lobby": {
     "title": "Game Lobby",
@@ -59,7 +67,11 @@
     "soundOff": "Mute",
     "newGame": "New game",
     "rolled": "Rolled {{total}}!",
-    "fullscreen": "Fullscreen"
+    "fullscreen": "Fullscreen",
+    "auto": "Auto",
+    "autoHint": "Auto-play your turns (also turns on after 15s idle on your turn)",
+    "autoOn": "Auto-play on",
+    "autoStop": "tap to stop"
   },
   "profession": {
     "your": "Your profession is",
@@ -117,6 +129,17 @@
     "donate": "Donate 10% (roll 1–2 dice for 3 turns)",
     "units": "Units",
     "youOwn": "You own {{count}} units",
+    "youOwnShares": "You own {{count}} shares",
+    "shares": "shares",
+    "cashOnHand": "Cash on hand",
+    "currentValue": "Current value",
+    "sellAll": "Sell all",
+    "offerDeal": "Offer to another player",
+    "offerTo": "Offer this deal to:",
+    "offerWaiting": "Waiting for {{name}} to respond…",
+    "offerReceived": "{{name}} passed this deal to you",
+    "acceptBuy": "Buy it",
+    "decline": "Decline",
     "insufficient": "Not enough cash",
     "marketSell": "Market offer to buy",
     "othersSell": "You hold this stock — you may sell at this price",

@@ -242,6 +242,7 @@ export interface PublicGameState {
   awaitingDealChoice: boolean; // landed on a deal tile, choose small/big
   awaitingDreamChoice: string[]; // player ids that must pick a dream
   awaitingFastTrackChoice: string | null; // current player may choose to enter Fast Track
+  pendingOffer: { fromId: string; toId: string } | null; // current player passed the deal to another player to buy
   dreamMarkers: Record<string, number>; // extra-cost markers per dream id
   logs: { ts: number; player: string; color: string; code: string; params: Record<string, unknown> }[];
   winnerId: string | null;

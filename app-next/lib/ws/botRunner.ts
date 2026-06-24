@@ -1,5 +1,5 @@
 import { rooms, type Room } from './RoomManager.js';
-import { nextBotAction, type BotAction } from './botPolicy.js';
+import { nextBotAction, acceptDealOffer, type BotAction } from './botPolicy.js';
 import { maybeRecordGameEnd } from './recordGameEnd.js';
 
 /** Delay between consecutive bot actions, so a human can watch the bot play. */
@@ -27,7 +27,34 @@ type GameWithActions = Room['game'] & Record<string, (...a: unknown[]) => { ok: 
  *    arriving mid-bot-turn won't start a second loop).
  */
 export function maybeRunBots(room: Room, broadcast: (room: Room) => void): void {
-  if (!room.bots || room.bots.size === 0) return;
+  // A turn is auto-driven when it belongs to a bot OR to a human who turned on
+  // Auto-play. Both use the same heuristic. When no one is auto-controlled this is
+  // a no-op, so normal human games are unaffected.
+  const controlled = (id: string | null): boolean =>
+    id != null && !!(room.bots?.has(id) || room.autoPlayers?.has(id));
+  if (!room.bots?.size && !room.autoPlayers?.size) return;
+
+  // Out-of-turn: a deal was passed to an auto-controlled player. Answer it after a
+  // beat (accept if the heuristic likes it, else decline) so the offerer isn't stuck.
+  const pendingOffer = room.game.getState().pendingOffer;
+  if (pendingOffer && controlled(pendingOffer.toId) && !room.botOfferPending) {
+    room.botOfferPending = true;
+    setTimeout(() => {
+      room.botOfferPending = false;
+      if (rooms.get(room.code) !== room) return;
+      const st = room.game.getState();
+      const offer = st.pendingOffer;
+      if (!offer || !controlled(offer.toId)) return;
+      const bot = st.players.find((pl) => pl.id === offer.toId);
+      const accept = !!st.pendingCard && !!bot && acceptDealOffer(st.pendingCard, bot);
+      room.game.respondOffer(offer.toId, accept);
+      broadcast(room);
+      maybeRecordGameEnd(room);
+      maybeRunBots(room, broadcast);
+    }, BOT_DELAY_MS);
+    return; // resolve the offer before driving any turn
+  }
+
   if (room.botRunning) return; // a loop is already scheduled for this room
 
   const game = room.game as GameWithActions;
@@ -35,7 +62,7 @@ export function maybeRunBots(room: Room, broadcast: (room: Room) => void): void 
     // Stop a zombie loop if the room was evicted from the manager.
     if (rooms.get(room.code) !== room) return false;
     const cur = game.getState().currentPlayerId;
-    return game.status === 'started' && cur !== null && room.bots!.has(cur);
+    return game.status === 'started' && controlled(cur);
   };
 
   if (!isBotTurn()) return;

@@ -31,6 +31,14 @@ const MESSAGES: Record<string, { th: (p: any) => string; en: (p: any) => string 
     th: (p: any) => `ได้รับเงินเดือน ${money(p.amount)}`,
     en: (p: any) => `received payday ${money(p.amount)}`
   },
+  mlmPayout: {
+    th: (p: any) => (p.win ? `ธุรกิจ MLM ได้ผล! ทอยได้ ${p.die} รับ ${money(p.payout)}` : `MLM ทอยได้ ${p.die} — เดือนนี้ยังไม่มีรายได้`),
+    en: (p: any) => (p.win ? `MLM paid off! rolled ${p.die}, collected ${money(p.payout)}` : `MLM rolled ${p.die} — no returns this month`)
+  },
+  firstPlayer: {
+    th: (p: any) => `ทอยได้ ${p.roll} — ได้เริ่มก่อน`,
+    en: (p: any) => `rolled ${p.roll} — goes first`
+  },
   dealLanded: {
     th: () => 'ตกช่องดีล — เลือก Small หรือ Big',
     en: () => 'landed on a Deal — choose Small or Big'
@@ -115,6 +123,18 @@ const MESSAGES: Record<string, { th: (p: any) => string; en: (p: any) => string 
     th: () => 'ขายอสังหาฯ ตามราคาตลาด',
     en: () => 'sold real estate at market'
   },
+  soldBiz: {
+    th: () => 'ขายธุรกิจตามราคาตลาด',
+    en: () => 'sold a business at market'
+  },
+  offeredDeal: {
+    th: (p: any) => `${p.from} ส่งดีล "${p.heading}" มาให้`,
+    en: (p: any) => `was offered "${p.heading}" by ${p.from}`
+  },
+  declinedDeal: {
+    th: () => 'ปฏิเสธดีลที่ถูกส่งมา',
+    en: () => 'declined the offered deal'
+  },
   joinedMlm: {
     th: (p: any) => `เข้าร่วม ${p.symbol}`,
     en: (p: any) => `joined ${p.symbol}`
@@ -140,8 +160,8 @@ const MESSAGES: Record<string, { th: (p: any) => string; en: (p: any) => string 
     en: () => 'went bankrupt 💀'
   },
   liquidated: {
-    th: () => 'ขายสินทรัพย์เพื่อใช้หนี้',
-    en: () => 'liquidated assets to cover debt'
+    th: (p: any) => (p.turnsLost ? `ขายสินทรัพย์เพื่อใช้หนี้ — เสีย ${p.turnsLost} เทิร์น` : 'ขายสินทรัพย์เพื่อใช้หนี้'),
+    en: (p: any) => (p.turnsLost ? `liquidated assets to cover debt — lose ${p.turnsLost} turn${p.turnsLost > 1 ? 's' : ''}` : 'liquidated assets to cover debt')
   },
   enteredFT: {
     th: () => '🎉 เลือกหนีออกจากวงจรหนูถีบจักร และขึ้นเส้นทางด่วน!',
@@ -194,6 +214,7 @@ export function formatLog(entry: LogEntry, lng: 'th' | 'en'): string {
 const SOUND_MAP: Record<string, SfxName> = {
   rolled: 'roll',
   payday: 'payday',
+  mlmPayout: 'payday',
   ftPayday: 'payday',
   won: 'win',
   enteredFT: 'fastTrack',

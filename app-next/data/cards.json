@@ -1711,6 +1711,45 @@
       "subRule": [
         "If you sell, pay off the related mortgage and give up the cash flow on this property."
       ]
+    },
+    {
+      "id": "marketBizBuyer01",
+      "type": "business",
+      "symbol": "BIZ",
+      "heading": "Business Buyer",
+      "plus": false,
+      "value": 50,
+      "description": "A corporation is buying up small businesses. Offers your original cost plus 50%.",
+      "rule": "Everyone may sell any number of businesses at this price.",
+      "subRule": [
+        "If you sell, pay off the related mortgage and give up the cash flow on this business."
+      ]
+    },
+    {
+      "id": "marketBizBuyer02",
+      "type": "business",
+      "symbol": "BIZ",
+      "heading": "Business Buyer",
+      "plus": false,
+      "value": 100,
+      "description": "A hot market for small businesses. Offers your original cost plus 100%.",
+      "rule": "Everyone may sell any number of businesses at this price.",
+      "subRule": [
+        "If you sell, pay off the related mortgage and give up the cash flow on this business."
+      ]
+    },
+    {
+      "id": "marketBizBuyer03",
+      "type": "business",
+      "symbol": "BIZ",
+      "heading": "Business Buyer",
+      "plus": true,
+      "value": 50000,
+      "description": "An investor wants your business. Offers your original cost plus $50,000.",
+      "rule": "Everyone may sell any number of businesses at this price.",
+      "subRule": [
+        "If you sell, pay off the related mortgage and give up the cash flow on this business."
+      ]
     }
   ]
 }

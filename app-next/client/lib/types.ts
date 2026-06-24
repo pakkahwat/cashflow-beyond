@@ -122,6 +122,7 @@ export interface GameState {
   awaitingDealChoice: boolean;
   awaitingDreamChoice: string[];
   awaitingFastTrackChoice: string | null;
+  pendingOffer?: { fromId: string; toId: string } | null;
   dreamMarkers?: Record<string, number>;
   logs: LogEntry[];
   winnerId: string | null;

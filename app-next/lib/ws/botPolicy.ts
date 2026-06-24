@@ -161,3 +161,12 @@ function resolveFastTrackTile(
 function affordable(player: PublicPlayer, price: number): boolean {
   return player.cash - price >= LOW_CASH;
 }
+
+/** Decide whether a bot accepts a deal another player offered it: take it only if
+ *  it yields positive monthly cash flow and the bot can afford the down payment
+ *  while keeping its cash cushion. Same heuristic the bot uses for its own deals. */
+export function acceptDealOffer(card: Card, player: PublicPlayer): boolean {
+  const cashFlow = card.cashFlow ?? 0;
+  const down = card.downPayment ?? card.cost ?? 0;
+  return cashFlow > 0 && affordable(player, down);
+}

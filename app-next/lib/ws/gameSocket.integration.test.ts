@@ -203,6 +203,58 @@ describe('bot mode (createBotGame / auto-play)', () => {
 
     a.close();
   });
+
+  it('setAuto registers/unregisters the human in room.autoPlayers', async () => {
+    const code = 'AUTO1';
+    const a = connect(code);
+    await a.readyP;
+    await a.emit('join', { idToken: 'test:au1:Auto', intent: 'create' });
+
+    const on = await a.emit('setAuto', { auto: true });
+    expect(on.ok).toBe(true);
+    expect(rooms.get(code)!.autoPlayers?.has('au1')).toBe(true);
+
+    const off = await a.emit('setAuto', { auto: false });
+    expect(off.ok).toBe(true);
+    expect(rooms.get(code)!.autoPlayers?.has('au1')).toBe(false);
+
+    a.close();
+  });
+
+  it('auto-plays a human turn when they have Auto on (no bots in the room)', async () => {
+    const prevDelay = process.env.BOT_DELAY_MS;
+    const code = 'AUTO2';
+    const a = connect(code);
+    await a.readyP;
+    await a.emit('join', { idToken: 'test:auA:AutoA', intent: 'create' });
+    const b = connect(code);
+    await b.readyP;
+    await b.emit('join', { idToken: 'test:auB:AutoB', intent: 'join' });
+    await a.emit('startGame', {});
+
+    const room = rooms.get(code)!;
+    // Turn BOTH players to Auto so whoever is current gets driven, and the game runs.
+    await a.emit('setAuto', { auto: true });
+    await b.emit('setAuto', { auto: true });
+    expect(room.autoPlayers?.size).toBe(2);
+    expect(room.bots ? room.bots.size : 0).toBe(0); // genuinely no bots
+
+    // With both on auto the engine should progress on its own (dreams picked, dice
+    // rolled) within a few hundred ms even at the default delay.
+    let progressed = false;
+    for (let i = 0; i < 40; i++) {
+      await new Promise((r) => setTimeout(r, 60));
+      const st = room.game.getState();
+      const someoneRolled = st.players.some((p) => p.position > 0);
+      const dreamsPicked = st.players.some((p) => p.dreamId);
+      if (someoneRolled || dreamsPicked || st.status === 'finished') { progressed = true; break; }
+    }
+    expect(progressed).toBe(true);
+
+    a.close(); b.close();
+    rooms.delete(code); // stop any lingering auto loop
+    if (prevDelay === undefined) delete process.env.BOT_DELAY_MS; else process.env.BOT_DELAY_MS = prevDelay;
+  });
 });
 
 describe('room eviction', () => {

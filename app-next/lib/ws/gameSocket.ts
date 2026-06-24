@@ -82,6 +82,8 @@ const attach = (room: Room, ws: WebSocket, playerId: string) => {
 const onClose = (room: Room, ws: WebSocket) => {
   const playerId = room.sockets.get(ws);
   room.sockets.delete(ws);
+  // A disconnected player shouldn't keep auto-playing; they re-enable on return.
+  if (playerId) room.autoPlayers?.delete(playerId);
 
   // If the socket had a real player attached, remove them and broadcast.
   if (playerId) {
@@ -203,6 +205,16 @@ const onMessage = (room: Room, ws: WebSocket, raw: string) => {
     return;
   }
 
+  if (msg.event === 'setAuto') {
+    // The player toggles Auto-play for themselves; the runner then plays their turns.
+    if (!room.autoPlayers) room.autoPlayers = new Set();
+    if (p.auto) room.autoPlayers.add(playerId);
+    else room.autoPlayers.delete(playerId);
+    ack(true, { auto: !!p.auto });
+    if (p.auto) maybeRunBots(room, broadcast); // act now if it's already their turn
+    return;
+  }
+
   let res: { ok: boolean; error?: string } = { ok: false, error: 'unknown_event' };
   switch (msg.event) {
     case 'startGame': {
@@ -213,6 +225,8 @@ const onMessage = (room: Room, ws: WebSocket, raw: string) => {
     case 'setDifficulty': res = g.setDifficulty(playerId, p.difficulty === 'easy' ? 'easy' : 'normal'); break;
     case 'rollDice': res = g.rollDice(playerId, Number(p.diceCount) || 1); break;
     case 'chooseDeal': res = g.chooseDeal(playerId, p.size); break;
+    case 'offerDeal': res = g.offerDeal(playerId, String(p.toPlayerId)); break;
+    case 'respondOffer': res = g.respondOffer(playerId, !!p.accept); break;
     case 'cardAction': res = g.cardAction(playerId, p.action, p.payload); break;
     case 'takeLoan': res = g.takeLoan(playerId, Number(p.amount)); break;
     case 'payLoan': res = g.payLoan(playerId, p.type as keyof Liabilities, Number(p.amount)); break;

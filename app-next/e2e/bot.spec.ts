@@ -43,8 +43,11 @@ test('single player can start a bot game and the bot takes a turn', async () => 
   await page.goto('/');
   await page.waitForSelector('.screen.home', { timeout: 20_000 });
 
-  // ── 2. Fill name + click Play vs Bots ───────────────────────────────────────
+  // ── 2. Fill name + open the Bots tab + click Play vs Bots ───────────────────
   await page.locator('input.text-input').first().fill('Alice');
+
+  // Home now uses mode tabs (Create / Join / Bots); open the Bots tab first.
+  await page.locator('.mode-tabs button').filter({ hasText: /บอต|Bots/i }).click();
 
   // Click the Play vs Bots button (bot count defaults to 1)
   await page.locator('button.bot-play-btn').click();

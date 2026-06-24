@@ -2,6 +2,7 @@
 import { useState, useEffect, createContext, useContext } from 'react';
 import type { User } from 'firebase/auth';
 import { onAuthChange, signInWithGoogle, signOutUser } from '../lib/firebase';
+import { clearSession } from '../lib/socket';
 
 interface AuthContextValue {
   user: User | null;
@@ -21,6 +22,12 @@ export default function AuthGate({ children }: Props) {
   const [user, setUser] = useState<User | null | false>(null);
 
   useEffect(() => {
+    // E2E test mode: skip Google sign-in entirely (guarded by the build flag, never
+    // set in production), so Playwright can drive real games without OAuth.
+    if (process.env.NEXT_PUBLIC_E2E === '1') {
+      setUser({ uid: 'e2e', displayName: 'E2E Player' } as unknown as User);
+      return;
+    }
     const unsub = onAuthChange((u) => setUser(u ?? false));
     return unsub;
   }, []);
@@ -41,9 +48,15 @@ export default function AuthGate({ children }: Props) {
     );
   }
 
-  // Signed in — render the app with auth context
+  // Signed in — render the app with auth context. signOut clears the saved game
+  // session first so the next account to sign in here doesn't auto-resume this one.
+  const signOut = async () => {
+    clearSession();
+    await signOutUser();
+  };
+
   return (
-    <AuthContext.Provider value={{ user, signOut: signOutUser }}>
+    <AuthContext.Provider value={{ user, signOut }}>
       {children}
     </AuthContext.Provider>
   );

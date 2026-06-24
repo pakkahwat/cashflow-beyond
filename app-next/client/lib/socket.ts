@@ -4,7 +4,7 @@
 // A localStorage UUID is kept only as a pre-auth fallback (should never reach
 // the server once the user is signed in, because the join is blocked by AuthGate).
 
-import { auth, getIdToken } from './firebase';
+import { auth, getIdToken, onAuthChange, authReady } from './firebase';
 
 export interface Ack {
   ok: boolean;
@@ -27,8 +27,18 @@ const LS = {
   name: 'cf_name'
 };
 
+// E2E test mode: skip real Firebase and present a bypass token the server accepts
+// when WS_AUTH_BYPASS=1. Never set in production builds (guarded by the env flag),
+// so it cannot weaken real auth.
+const E2E = process.env.NEXT_PUBLIC_E2E === '1';
+
 const uuid = (): string =>
   (crypto as any).randomUUID?.() ?? Math.random().toString(36).slice(2) + Date.now().toString(36);
+
+/** The token attached to join/API calls: a real Firebase id token, or — in E2E
+ *  test mode — a `test:<uid>:<name>` token matching the server's WS_AUTH_BYPASS. */
+const authToken = async (): Promise<string | null> =>
+  E2E ? `test:${getPlayerId()}:${getUsername()}` : getIdToken();
 
 /** Get the current player's Firebase uid, falling back to a localStorage uuid. */
 const getPlayerId = (): string => {
@@ -57,6 +67,14 @@ export const onState = (cb: (s: any) => void) => {
 export const onId = (cb: (id: string) => void) => {
   idCb = cb;
   cb(getPlayerId());
+  // Keep the reported player id in sync with Firebase. At page load the store reads
+  // `getPlayerId()` before Firebase has restored the session, so it gets the pre-auth
+  // localStorage uuid. When auth resolves (or the user signs in/out) we re-emit the
+  // now-correct uid, otherwise `myId` would stay stuck on the uuid and never match the
+  // server-side player (keyed by Firebase uid) — breaking "is it my turn" everywhere.
+  // Registered here (not at module load) so importing socket without the store — e.g.
+  // AuthGate pulling in clearSession — doesn't trigger the auth subscription.
+  onAuthChange(() => idCb(getPlayerId()));
 };
 export const getMyId = () => getPlayerId();
 export const savedRoom = () => localStorage.getItem(LS.room);
@@ -74,8 +92,9 @@ const scheduleReconnect = () => {
     reconnectTimer = null;
     reconnectAttempts += 1;
     try {
+      await authReady; // ensure the real uid + a fresh token, not the pre-auth fallback
       await connect(roomId);
-      const idToken = await getIdToken();
+      const idToken = await authToken();
       await emit('join', { intent: 'resume', playerId: getPlayerId(), username: getUsername(), idToken });
       reconnectAttempts = 0;
     } catch {
@@ -141,8 +160,17 @@ const forget = () => {
   localStorage.removeItem(LS.room);
 };
 
+/** Clear all saved session keys. Called on sign-out so the next user who signs in on
+ *  this device doesn't inherit the previous player's room / name / id. */
+export const clearSession = () => {
+  localStorage.removeItem(LS.room);
+  localStorage.removeItem(LS.name);
+  localStorage.removeItem(LS.pid);
+};
+
 export const createRoom = async (username: string): Promise<Ack> => {
-  const idToken = await getIdToken();
+  if (E2E) localStorage.setItem(LS.name, username); // bypass token carries the name
+  const idToken = await authToken();
   const res = await fetch(`${apiBase}/api/room`, {
     method: 'POST',
     headers: idToken ? { Authorization: `Bearer ${idToken}` } : {},
@@ -157,33 +185,44 @@ export const createRoom = async (username: string): Promise<Ack> => {
 };
 
 export const joinRoom = async (roomId: string, username: string): Promise<Ack> => {
+  if (E2E) localStorage.setItem(LS.name, username); // bypass token carries the name
   try {
     await connect(roomId);
   } catch {
     return { ok: false, error: 'room_not_found' };
   }
-  const idToken = await getIdToken();
+  const idToken = await authToken();
   const playerId = getPlayerId();
   const ack = await emit('join', { intent: 'join', playerId, username, idToken });
   if (ack.ok) remember(ack.roomId || roomId, username);
   return ack;
 };
 
-/** Re-join a saved game after a refresh. Returns false if nothing to resume. */
+/** Re-join a saved game after a refresh. Returns null if nothing to resume.
+ *
+ *  Two correctness rules, both learned from the "refresh drops me to home" bug:
+ *  1. Wait for Firebase (`authReady`) before reading the id/token. Running at module
+ *     load — before the session is restored — sent a null token + the uuid fallback,
+ *     so the server rejected the resume.
+ *  2. Only `forget()` the saved room when the server says it's genuinely gone
+ *     (`room_not_found`). Transient failures (not signed in yet, no connection,
+ *     timeout) must KEEP the room so a retry / re-login can still rejoin. */
 export const resume = async (): Promise<Ack | null> => {
   const roomId = localStorage.getItem(LS.room);
-  const name = getUsername();
   if (!roomId) return null;
+  await authReady;
+  // Not signed in (e.g. session expired) — keep the room and let a later sign-in retry.
+  if (!E2E && !auth.currentUser) return { ok: false, error: 'auth_required' };
   try {
     await connect(roomId);
   } catch {
-    forget();
-    return { ok: false, error: 'room_not_found' };
+    return { ok: false, error: 'no_connection' };
   }
-  const idToken = await getIdToken();
+  const idToken = await authToken();
   const playerId = getPlayerId();
+  const name = getUsername();
   const ack = await emit('join', { intent: 'resume', playerId, username: name, idToken });
-  if (!ack.ok) forget();
+  if (!ack.ok && ack.error === 'room_not_found') forget();
   return ack;
 };
 
@@ -206,7 +245,8 @@ export const fetchBoard = async (): Promise<{ dreams: any[]; fastTrack: any[] }>
  * start immediately. Mirrors the `createRoom` flow for connection/token handling.
  */
 export const createBotGame = async (username: string, count: number): Promise<Ack> => {
-  const idToken = await getIdToken();
+  if (E2E) localStorage.setItem(LS.name, username); // bypass token carries the name
+  const idToken = await authToken();
   const res = await fetch(`${apiBase}/api/room`, {
     method: 'POST',
     headers: idToken ? { Authorization: `Bearer ${idToken}` } : {},
@@ -229,3 +269,12 @@ export const createBotGame = async (username: string, count: number): Promise<Ac
  * broadcasts the updated state.
  */
 export const addBot = (): Promise<Ack> => emit('addBot');
+
+/** Pass the current pending deal to another player (the rulebook's "sell the option"). */
+export const offerDeal = (toPlayerId: string): Promise<Ack> => emit('offerDeal', { toPlayerId });
+
+/** Respond to a deal another player passed to you: buy it (accept) or decline. */
+export const respondOffer = (accept: boolean): Promise<Ack> => emit('respondOffer', { accept });
+
+/** Toggle Auto-play for yourself; the server then plays your turns like a bot. */
+export const setAutoPlay = (auto: boolean): Promise<Ack> => emit('setAuto', { auto });

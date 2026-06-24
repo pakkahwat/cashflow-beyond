@@ -19,6 +19,11 @@ const app = getApps().length ? getApps()[0] : initializeApp(config);
 export const auth = getAuth(app);
 const provider = new GoogleAuthProvider();
 
+// Resolves once Firebase has finished restoring the persisted session on load.
+// Until this settles, `auth.currentUser` is null and any identity/token read would
+// fall back to a pre-auth value — callers that need the real uid must await this.
+export const authReady: Promise<void> = auth.authStateReady();
+
 export const signInWithGoogle = () => signInWithPopup(auth, provider);
 export const signOutUser = () => signOut(auth);
 export const onAuthChange = (cb: (u: User | null) => void) =>
