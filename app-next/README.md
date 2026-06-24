@@ -69,7 +69,7 @@ mongodb://cashflow_app:<pwd>@shared-mongo:27017/cashflow?authSource=cashflow
 From the **repo root**:
 
 ```bash
-cp app-next/.env.example .env
+cp .env.example .env
 # Edit .env — fill in all values (Firebase config, cashflow_app password, TUNNEL_TOKEN)
 docker compose up --build
 ```
